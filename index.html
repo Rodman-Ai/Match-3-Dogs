@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#1b1438" />
+<meta name="description" content="Match-3 Dogs — a cozy puzzle game. Swap adjacent pups to match three or more!" />
+<title>Match-3 Dogs</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🐶%3C/text%3E%3C/svg%3E" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <h1>🐶 Match-3 Dogs</h1>
+      <div class="stats">
+        <div class="stat">
+          <span class="label">Score</span>
+          <span id="score" class="value">0</span>
+        </div>
+        <div class="stat">
+          <span class="label">Moves</span>
+          <span id="moves" class="value">30</span>
+        </div>
+        <div class="stat">
+          <span class="label">Best</span>
+          <span id="best" class="value">0</span>
+        </div>
+      </div>
+    </header>
+
+    <main class="board-wrap">
+      <div id="board" class="board" role="grid" aria-label="Match three dogs game board"></div>
+      <div id="overlay" class="overlay hidden">
+        <div class="overlay-card">
+          <h2 id="overlay-title">Game Over</h2>
+          <p id="overlay-text">Nice run!</p>
+          <button id="restart" class="btn">Play Again</button>
+        </div>
+      </div>
+    </main>
+
+    <footer class="bottombar">
+      <button id="newGame" class="btn ghost">New Game</button>
+      <p class="hint">Swap two adjacent pups to match 3+ in a row.</p>
+    </footer>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>
