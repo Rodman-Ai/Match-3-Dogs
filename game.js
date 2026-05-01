@@ -74,6 +74,35 @@
   // mode = { kind: 'classic' } | { kind: 'daily', dateKey } | { kind: 'level', n }
   let mode = { kind: 'classic' };
 
+  // --- Daily Challenge helpers ---
+  const DAILY_KEY_PREFIX = 'match3dogs:daily:';
+  function todayKey() {
+    const d = new Date();
+    const yyyy = d.getUTCFullYear();
+    const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(d.getUTCDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+  function loadDailyRecord(dateKey) {
+    try { return JSON.parse(localStorage.getItem(DAILY_KEY_PREFIX + dateKey) || '{}') || {}; }
+    catch { return {}; }
+  }
+  function saveDailyRecord(dateKey, rec) {
+    localStorage.setItem(DAILY_KEY_PREFIX + dateKey, JSON.stringify(rec));
+  }
+  function msUntilNextUTC() {
+    const now = new Date();
+    const next = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0);
+    return next - now.getTime();
+  }
+  function fmtCountdown(ms) {
+    const total = Math.max(0, Math.floor(ms / 1000));
+    const h = String(Math.floor(total / 3600)).padStart(2, '0');
+    const m = String(Math.floor((total % 3600) / 60)).padStart(2, '0');
+    const s = String(total % 60).padStart(2, '0');
+    return `${h}:${m}:${s}`;
+  }
+
   const EAR_PATHS = {
     droopy: { l: 'M 14,22 Q 4,40 14,48 Q 19,42 19,30 Z',
               r: 'M 46,22 Q 56,40 46,48 Q 41,42 41,30 Z' },
@@ -864,17 +893,36 @@
     for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) updateTile(r, c, { animate: 'fall' });
   }
 
+  let countdownTimer = null;
+  function stopCountdown() {
+    if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
+  }
   function endGame() {
     clearHint();
     sfx.end();
     const stars = renderStars();
     overlayTitle.textContent = stars >= 3 ? 'Pawesome!' : stars === 2 ? 'Good run!' : stars === 1 ? 'So close!' : 'Game over';
-    overlayText.textContent = `Score ${score} / ${GOAL}${score > bestAtStart ? ' · New best!' : ''}`;
+
+    if (mode.kind === 'daily') {
+      const rec = loadDailyRecord(mode.dateKey);
+      const isNewBest = !rec.best || score > rec.best;
+      if (isNewBest) saveDailyRecord(mode.dateKey, { best: score, stars });
+      const dailyBest = isNewBest ? score : rec.best;
+      const tick = () => {
+        overlayText.innerHTML = `Daily best: <b>${dailyBest}</b>${isNewBest ? ' · new!' : ''}<br>Next challenge in ${fmtCountdown(msUntilNextUTC())}`;
+      };
+      tick();
+      stopCountdown();
+      countdownTimer = setInterval(tick, 1000);
+    } else {
+      overlayText.textContent = `Score ${score} / ${GOAL}${score > bestAtStart ? ' · New best!' : ''}`;
+    }
     overlay.classList.remove('hidden');
   }
 
   function newGame(nextMode) {
     if (nextMode) mode = nextMode;
+    stopCountdown();
     // Set RNG and per-mode score targets
     if (mode.kind === 'classic') {
       rng = Math.random;
@@ -886,6 +934,11 @@
     } else {
       rng = Math.random;
     }
+    // Reflect mode in button visuals (the dailyBtn is fetched lazily because
+    // newGame() may run before the listener block below has resolved it)
+    const dBtn = document.getElementById('dailyBtn');
+    if (dBtn) dBtn.classList.toggle('active', mode.kind === 'daily');
+    newGameBtn.classList.toggle('active', mode.kind === 'classic');
     setScore(0);
     setMoves(START_MOVES);
     overlay.classList.add('hidden');
@@ -1001,8 +1054,11 @@
   boardEl.addEventListener('pointercancel', endDrag);
 
   // Buttons
-  restartBtn.addEventListener('click', newGame);
-  newGameBtn.addEventListener('click', newGame);
+  // Restart preserves the current mode; New Game and Daily switch modes explicitly.
+  restartBtn.addEventListener('click', () => newGame());
+  newGameBtn.addEventListener('click', () => newGame({ kind: 'classic' }));
+  const dailyBtn = document.getElementById('dailyBtn');
+  dailyBtn.addEventListener('click', () => newGame({ kind: 'daily', dateKey: todayKey() }));
 
   // Prevent context menu on long-press
   boardEl.addEventListener('contextmenu', (e) => e.preventDefault());
