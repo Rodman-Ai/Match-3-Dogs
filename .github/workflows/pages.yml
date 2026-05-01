@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - claude/match-3-dogs-game-2J8Bi
   workflow_dispatch:
 
 permissions:

@@ -4,12 +4,14 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 <meta name="theme-color" content="#1b1438" />
-<meta name="description" content="Match-3 Dogs — a cozy puzzle game. Swap adjacent pups to match three or more!" />
+<meta name="description" content="Match-3 Dogs — match three or more pups, including beagles and doge!" />
 <title>Match-3 Dogs</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🐶%3C/text%3E%3C/svg%3E" />
 <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+  <div class="paws" aria-hidden="true"></div>
+
   <div class="app">
     <header class="topbar">
       <h1>🐶 Match-3 Dogs</h1>
@@ -17,6 +19,10 @@
         <div class="stat">
           <span class="label">Score</span>
           <span id="score" class="value">0</span>
+        </div>
+        <div class="stat">
+          <span class="label">Goal</span>
+          <span id="goal" class="value">1500</span>
         </div>
         <div class="stat">
           <span class="label">Moves</span>
@@ -31,9 +37,11 @@
 
     <main class="board-wrap">
       <div id="board" class="board" role="grid" aria-label="Match three dogs game board"></div>
+      <div id="combo" class="combo hidden" aria-live="polite"></div>
       <div id="overlay" class="overlay hidden">
         <div class="overlay-card">
-          <h2 id="overlay-title">Game Over</h2>
+          <div id="overlay-stars" class="stars" aria-hidden="true"></div>
+          <h2 id="overlay-title">Pawesome!</h2>
           <p id="overlay-text">Nice run!</p>
           <button id="restart" class="btn">Play Again</button>
         </div>
@@ -41,8 +49,11 @@
     </main>
 
     <footer class="bottombar">
-      <button id="newGame" class="btn ghost">New Game</button>
-      <p class="hint">Swap two adjacent pups to match 3+ in a row.</p>
+      <div class="controls">
+        <button id="newGame" class="btn ghost">New Game</button>
+        <button id="mute" class="btn ghost icon" aria-pressed="false" title="Mute / unmute">🔊</button>
+      </div>
+      <p class="hint">Match 3+ pups in a row. 4-match → striped, L/T → bomb, 5-match → rainbow.</p>
     </footer>
   </div>
 
