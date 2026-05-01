@@ -91,6 +91,8 @@
 
   /** @type {number[][]} grid[r][c] = kind */
   let grid = [];
+  /** @type {(null|'h'|'v'|'bomb'|'rainbow')[][]} */
+  let powers = [];
   /** @type {HTMLDivElement[][]} */
   let cells = [];
   let score = 0;
@@ -98,6 +100,16 @@
   let best = Number(localStorage.getItem(BEST_KEY) || 0);
   let busy = false;
   let selected = null; // {r,c}
+  let lastSwap = null; // {a:{r,c}, b:{r,c}} - to bias power-up placement
+
+  const POWER_CLASS = { h: 'power-h', v: 'power-v', bomb: 'power-bomb', rainbow: 'power-rainbow' };
+
+  function emptyPowers() {
+    return Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+  }
+  function emptyBoolGrid() {
+    return Array.from({ length: ROWS }, () => Array(COLS).fill(false));
+  }
 
   bestEl.textContent = String(best);
 
@@ -136,6 +148,7 @@
         tile.dataset.c = String(c);
         tile.dataset.kind = String(grid[r][c]);
         tile.innerHTML = dogSVG(grid[r][c]);
+        if (powers[r][c]) tile.classList.add(POWER_CLASS[powers[r][c]]);
         cells[r][c] = tile;
         boardEl.appendChild(tile);
       }
@@ -147,6 +160,9 @@
     if (!t) return;
     t.dataset.kind = String(grid[r][c]);
     t.innerHTML = dogSVG(grid[r][c]);
+    // Reset power classes, then re-apply current
+    t.classList.remove('power-h', 'power-v', 'power-bomb', 'power-rainbow');
+    if (powers[r][c]) t.classList.add(POWER_CLASS[powers[r][c]]);
     if (animate === 'fall') {
       t.classList.remove('fall');
       // force reflow so animation restarts
@@ -181,33 +197,132 @@
     return (Math.abs(a.r - b.r) + Math.abs(a.c - b.c)) === 1;
   }
 
-  function findMatches() {
-    const matched = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
-    // horizontal
+  function findRuns() {
+    const hRuns = [], vRuns = [];
     for (let r = 0; r < ROWS; r++) {
       let runStart = 0;
       for (let c = 1; c <= COLS; c++) {
         if (c === COLS || grid[r][c] !== grid[r][runStart]) {
-          if (c - runStart >= 3) {
-            for (let k = runStart; k < c; k++) matched[r][k] = true;
-          }
+          const len = c - runStart;
+          if (len >= 3) hRuns.push({ kind: grid[r][runStart], r, c0: runStart, c1: c - 1, len, dir: 'h' });
           runStart = c;
         }
       }
     }
-    // vertical
     for (let c = 0; c < COLS; c++) {
       let runStart = 0;
       for (let r = 1; r <= ROWS; r++) {
         if (r === ROWS || grid[r][c] !== grid[runStart][c]) {
-          if (r - runStart >= 3) {
-            for (let k = runStart; k < r; k++) matched[k][c] = true;
-          }
+          const len = r - runStart;
+          if (len >= 3) vRuns.push({ kind: grid[runStart][c], c, r0: runStart, r1: r - 1, len, dir: 'v' });
           runStart = r;
         }
       }
     }
+    return { hRuns, vRuns };
+  }
+
+  function findMatches() {
+    const matched = emptyBoolGrid();
+    const { hRuns, vRuns } = findRuns();
+    for (const run of hRuns)
+      for (let c = run.c0; c <= run.c1; c++) matched[run.r][c] = true;
+    for (const run of vRuns)
+      for (let r = run.r0; r <= run.r1; r++) matched[r][run.c] = true;
     return matched;
+  }
+
+  function pickRunCell(run) {
+    const cells = [];
+    if (run.dir === 'h') for (let c = run.c0; c <= run.c1; c++) cells.push({ r: run.r, c });
+    else for (let r = run.r0; r <= run.r1; r++) cells.push({ r, c: run.c });
+    if (lastSwap) {
+      for (const sc of [lastSwap.a, lastSwap.b]) {
+        const hit = cells.find(p => p.r === sc.r && p.c === sc.c);
+        if (hit) return hit;
+      }
+    }
+    return cells[Math.floor(cells.length / 2)];
+  }
+
+  function classifyMatches() {
+    const { hRuns, vRuns } = findRuns();
+    const newPowers = []; // {r, c, type, kind}
+    const used = new Set(); // "r,c" of cells now reserved as power-ups
+    const key = (r, c) => `${r},${c}`;
+
+    // 1. Bombs at intersections (cell in both an h-run and v-run of same kind)
+    const hCellSet = new Map(); // key -> hRun
+    for (const h of hRuns)
+      for (let c = h.c0; c <= h.c1; c++) hCellSet.set(key(h.r, c), h);
+    for (const v of vRuns) {
+      for (let r = v.r0; r <= v.r1; r++) {
+        const k = key(r, v.c);
+        const h = hCellSet.get(k);
+        if (h && h.kind === v.kind && !used.has(k)) {
+          newPowers.push({ r, c: v.c, type: 'bomb', kind: v.kind });
+          used.add(k);
+        }
+      }
+    }
+
+    // 2. Rainbow for runs of 5+
+    for (const run of [...hRuns, ...vRuns]) {
+      if (run.len < 5) continue;
+      const cell = pickRunCell(run);
+      const k = key(cell.r, cell.c);
+      if (used.has(k)) continue;
+      newPowers.push({ r: cell.r, c: cell.c, type: 'rainbow', kind: run.kind });
+      used.add(k);
+    }
+
+    // 3. Stripes for runs of length 4
+    for (const run of [...hRuns, ...vRuns]) {
+      if (run.len !== 4) continue;
+      // Skip if any cell already became a power-up
+      let claimed = false;
+      if (run.dir === 'h') {
+        for (let c = run.c0; c <= run.c1; c++) if (used.has(key(run.r, c))) { claimed = true; break; }
+      } else {
+        for (let r = run.r0; r <= run.r1; r++) if (used.has(key(r, run.c))) { claimed = true; break; }
+      }
+      if (claimed) continue;
+      const cell = pickRunCell(run);
+      const type = run.dir === 'h' ? 'h' : 'v';
+      newPowers.push({ r: cell.r, c: cell.c, type, kind: run.kind });
+      used.add(key(cell.r, cell.c));
+    }
+
+    return { newPowers, spared: used };
+  }
+
+  function applyPower(r, c, rainbowTargetKind) {
+    // Returns array of {r,c} cells to additionally clear (excluding self).
+    const out = [];
+    const type = powers[r][c];
+    if (!type) return out;
+    if (type === 'h') {
+      for (let cc = 0; cc < COLS; cc++) if (cc !== c) out.push({ r, c: cc });
+    } else if (type === 'v') {
+      for (let rr = 0; rr < ROWS; rr++) if (rr !== r) out.push({ r: rr, c });
+    } else if (type === 'bomb') {
+      for (let dr = -1; dr <= 1; dr++) {
+        for (let dc = -1; dc <= 1; dc++) {
+          const nr = r + dr, nc = c + dc;
+          if (nr === r && nc === c) continue;
+          if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS) out.push({ r: nr, c: nc });
+        }
+      }
+    } else if (type === 'rainbow') {
+      const target = rainbowTargetKind != null ? rainbowTargetKind : grid[r][c];
+      for (let rr = 0; rr < ROWS; rr++) {
+        for (let cc = 0; cc < COLS; cc++) {
+          if (rr === r && cc === c) continue;
+          if (grid[rr][cc] === target) out.push({ r: rr, c: cc });
+        }
+      }
+    }
+    return out;
   }
 
   function countMatches(matched) {
@@ -258,71 +373,134 @@
     setTimeout(() => f.remove(), 900);
   }
 
-  async function clearAndRefill() {
+  async function clearAndRefill(initialTriggers = []) {
     let chain = 0;
     let totalGained = 0;
+    let pending = initialTriggers.slice(); // [{r,c,target?}]
 
     while (true) {
       const matched = findMatches();
       const matchCount = countMatches(matched);
-      if (matchCount === 0) break;
+      if (matchCount === 0 && pending.length === 0) break;
       chain++;
 
-      // animate matched tiles
+      // 1. Classify natural matches into power-up creations (so spared cells survive)
+      const { newPowers, spared } = matchCount > 0 ? classifyMatches() : { newPowers: [], spared: new Set() };
+      const powerCells = new Set(newPowers.map(p => `${p.r},${p.c}`));
+
+      // 2. Compute clears: matched (minus spared) + expansions from triggered power-ups
+      const clearGrid = emptyBoolGrid();
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          if (matched[r][c] && !spared.has(`${r},${c}`)) clearGrid[r][c] = true;
+        }
+      }
+
+      // Process triggered power-ups (BFS — chaining)
+      const queue = pending.slice();
+      pending = [];
+      const queued = new Set(queue.map(t => `${t.r},${t.c}`));
+      // Also auto-trigger any matched cells that already hold a power-up (and weren't spared)
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          if (clearGrid[r][c] && powers[r][c] && !queued.has(`${r},${c}`)) {
+            queue.push({ r, c });
+            queued.add(`${r},${c}`);
+          }
+        }
+      }
+
+      while (queue.length) {
+        const t = queue.shift();
+        if (!powers[t.r][t.c]) continue;
+        clearGrid[t.r][t.c] = true;
+        const expanded = applyPower(t.r, t.c, t.target);
+        for (const cell of expanded) {
+          if (!clearGrid[cell.r][cell.c]) {
+            clearGrid[cell.r][cell.c] = true;
+            // Chain: another power-up in the affected zone fires too
+            if (powers[cell.r][cell.c] && !queued.has(`${cell.r},${cell.c}`)) {
+              queue.push({ r: cell.r, c: cell.c });
+              queued.add(`${cell.r},${cell.c}`);
+            }
+          }
+        }
+      }
+
+      // 3. Apply animations + score
       const matchedCoords = [];
       for (let r = 0; r < ROWS; r++) {
         for (let c = 0; c < COLS; c++) {
-          if (matched[r][c]) {
+          if (clearGrid[r][c]) {
             matchedCoords.push([r, c]);
             cells[r][c].classList.add('match');
           }
         }
       }
-
-      const gained = matchCount * 10 * chain;
+      const cleared = matchedCoords.length;
+      const gained = cleared * 10 * chain;
       totalGained += gained;
       setScore(score + gained);
-
-      // floater on the centroid of the largest cluster - keep it simple and just put on first tile
-      if (matchedCoords.length) {
+      if (cleared > 0) {
         const [r0, c0] = matchedCoords[0];
         showFloater(`+${gained}`, r0, c0);
       }
 
       await delay(280);
 
-      // remove matched (mark -1)
-      for (const [r, c] of matchedCoords) grid[r][c] = -1;
+      // 4. Remove cleared cells
+      for (const [r, c] of matchedCoords) {
+        grid[r][c] = -1;
+        powers[r][c] = null;
+      }
 
-      // gravity: drop existing tiles down per column
+      // 5. Apply newPowers to grid (overwriting kind + setting power)
+      for (const p of newPowers) {
+        // Only apply if cell wasn't somehow swept by an expansion (shouldn't happen since spared)
+        grid[p.r][p.c] = p.kind;
+        powers[p.r][p.c] = p.type;
+      }
+
+      // 6. Gravity: drop tiles + their powers per column
       for (let c = 0; c < COLS; c++) {
         let writeRow = ROWS - 1;
         for (let r = ROWS - 1; r >= 0; r--) {
           if (grid[r][c] !== -1) {
             if (writeRow !== r) {
               grid[writeRow][c] = grid[r][c];
+              powers[writeRow][c] = powers[r][c];
               grid[r][c] = -1;
+              powers[r][c] = null;
             }
             writeRow--;
           }
         }
-        // fill the rest at the top with new kinds
         for (let r = writeRow; r >= 0; r--) {
           grid[r][c] = Math.floor(Math.random() * KIND_COUNT);
+          powers[r][c] = null;
         }
       }
 
-      // re-render with fall animation on changed tiles
+      // 7. Re-render
       for (let r = 0; r < ROWS; r++) {
         for (let c = 0; c < COLS; c++) {
           updateTile(r, c, { animate: 'fall' });
         }
       }
 
+      // After the first pass, no more swap-driven biasing for power placement
+      lastSwap = null;
+
       await delay(260);
     }
 
     return { chain, totalGained };
+  }
+
+  function swapPowers(a, b) {
+    const t = powers[a.r][a.c];
+    powers[a.r][a.c] = powers[b.r][b.c];
+    powers[b.r][b.c] = t;
   }
 
   async function attemptSwap(a, b) {
@@ -333,10 +511,33 @@
     const tileA = cells[a.r][a.c];
     const tileB = cells[b.r][b.c];
 
+    const aIsPower = !!powers[a.r][a.c];
+    const bIsPower = !!powers[b.r][b.c];
+
     swap(a, b);
-    if (countMatches(findMatches()) === 0) {
+    swapPowers(a, b);
+
+    // Power-up swaps are always valid; otherwise require a match
+    const triggers = [];
+    if (aIsPower || bIsPower) {
+      // After the swap, the power-up that was at (a) is now at (b) and vice versa.
+      if (aIsPower) {
+        // The power that was at a is now at b. Trigger it.
+        const target = powers[b.r][b.c] === 'rainbow'
+          ? (bIsPower ? Math.floor(Math.random() * KIND_COUNT) : grid[b.r][b.c])
+          : undefined;
+        triggers.push({ r: b.r, c: b.c, target });
+      }
+      if (bIsPower) {
+        const target = powers[a.r][a.c] === 'rainbow'
+          ? (aIsPower ? Math.floor(Math.random() * KIND_COUNT) : grid[a.r][a.c])
+          : undefined;
+        triggers.push({ r: a.r, c: a.c, target });
+      }
+    } else if (countMatches(findMatches()) === 0) {
       // invalid: revert with shake
       swap(a, b);
+      swapPowers(a, b);
       tileA.classList.add('swap-bad');
       tileB.classList.add('swap-bad');
       await delay(280);
@@ -346,14 +547,14 @@
       return;
     }
 
-    // commit: update visuals, count move
+    // commit: update visuals, count move, remember swap site for power-up placement
     updateTile(a.r, a.c);
     updateTile(b.r, b.c);
     setMoves(moves - 1);
+    lastSwap = { a: { r: a.r, c: a.c }, b: { r: b.r, c: b.c } };
 
-    await clearAndRefill();
+    await clearAndRefill(triggers);
 
-    // ensure board has moves; if not, reshuffle
     if (!hasAnyMove()) {
       await delay(120);
       reshuffleInPlace();
@@ -364,9 +565,9 @@
   }
 
   function reshuffleInPlace() {
-    // collect all tiles, shuffle until at least one move exists and no immediate matches
+    // Collect (kind, power) pairs and shuffle them together so power-ups stay assigned to their tile
     const flat = [];
-    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) flat.push(grid[r][c]);
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) flat.push({ k: grid[r][c], p: powers[r][c] });
     let attempts = 0;
     while (attempts < 50) {
       for (let i = flat.length - 1; i > 0; i--) {
@@ -374,7 +575,11 @@
         [flat[i], flat[j]] = [flat[j], flat[i]];
       }
       let i = 0;
-      for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) grid[r][c] = flat[i++];
+      for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+        grid[r][c] = flat[i].k;
+        powers[r][c] = flat[i].p;
+        i++;
+      }
       if (countMatches(findMatches()) === 0 && hasAnyMove()) break;
       attempts++;
     }
@@ -392,9 +597,10 @@
     setMoves(START_MOVES);
     overlay.classList.add('hidden');
     selected = null;
+    lastSwap = null;
+    powers = emptyPowers();
     buildInitialGrid();
     render();
-    // resolve any rare initial cascade just in case
     busy = true;
     clearAndRefill().then(() => { busy = false; });
   }
