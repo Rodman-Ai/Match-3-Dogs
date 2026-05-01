@@ -47,6 +47,33 @@
   }
   applyPrefs();
 
+  // --- Seedable RNG (mulberry32) for daily challenge & level boards ---
+  function mulberry32(seed) {
+    let s = seed >>> 0;
+    return function () {
+      s = (s + 0x6D2B79F5) >>> 0;
+      let t = s;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  // Stable string -> 32-bit hash for date-based seeding
+  function fnv1a(str) {
+    let h = 0x811c9dc5 >>> 0;
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return h >>> 0;
+  }
+  // Default RNG; newGame() reassigns this based on mode.
+  let rng = Math.random;
+
+  // --- Game mode state ---
+  // mode = { kind: 'classic' } | { kind: 'daily', dateKey } | { kind: 'level', n }
+  let mode = { kind: 'classic' };
+
   const EAR_PATHS = {
     droopy: { l: 'M 14,22 Q 4,40 14,48 Q 19,42 19,30 Z',
               r: 'M 46,22 Q 56,40 46,48 Q 41,42 41,30 Z' },
@@ -231,7 +258,7 @@
     let k;
     let safety = 0;
     do {
-      k = Math.floor(Math.random() * KIND_COUNT);
+      k = Math.floor(rng() * KIND_COUNT);
       safety++;
     } while (exclude.includes(k) && safety < 20);
     return k;
@@ -684,7 +711,7 @@
           }
         }
         for (let r = writeRow; r >= 0; r--) {
-          grid[r][c] = Math.floor(Math.random() * KIND_COUNT);
+          grid[r][c] = Math.floor(rng() * KIND_COUNT);
           powers[r][c] = null;
         }
       }
@@ -788,12 +815,12 @@
       // Power that was at a is now at b. For rainbow, target = kind of the OTHER tile
       // which is now at a (or random if both sides were powers).
       const isRainbow = powers[b.r][b.c] === 'rainbow';
-      const target = isRainbow ? (bIsPower ? Math.floor(Math.random() * KIND_COUNT) : grid[a.r][a.c]) : undefined;
+      const target = isRainbow ? (bIsPower ? Math.floor(rng() * KIND_COUNT) : grid[a.r][a.c]) : undefined;
       triggers.push({ r: b.r, c: b.c, target });
     }
     if (bIsPower) {
       const isRainbow = powers[a.r][a.c] === 'rainbow';
-      const target = isRainbow ? (aIsPower ? Math.floor(Math.random() * KIND_COUNT) : grid[b.r][b.c]) : undefined;
+      const target = isRainbow ? (aIsPower ? Math.floor(rng() * KIND_COUNT) : grid[b.r][b.c]) : undefined;
       triggers.push({ r: a.r, c: a.c, target });
     }
     if (triggers.length) sfx.special();
@@ -822,7 +849,7 @@
     let attempts = 0;
     while (attempts < 50) {
       for (let i = flat.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
+        const j = Math.floor(rng() * (i + 1));
         [flat[i], flat[j]] = [flat[j], flat[i]];
       }
       let i = 0;
@@ -846,7 +873,19 @@
     overlay.classList.remove('hidden');
   }
 
-  function newGame() {
+  function newGame(nextMode) {
+    if (nextMode) mode = nextMode;
+    // Set RNG and per-mode score targets
+    if (mode.kind === 'classic') {
+      rng = Math.random;
+    } else if (mode.kind === 'daily') {
+      rng = mulberry32(fnv1a('daily:' + mode.dateKey));
+    } else if (mode.kind === 'level') {
+      // Per-level deterministic seed; consistent across reloads
+      rng = mulberry32((mode.n * 0x9e3779b1) >>> 0);
+    } else {
+      rng = Math.random;
+    }
     setScore(0);
     setMoves(START_MOVES);
     overlay.classList.add('hidden');
