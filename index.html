@@ -51,10 +51,27 @@
     <footer class="bottombar">
       <div class="controls">
         <button id="newGame" class="btn ghost">New Game</button>
+        <button id="dailyBtn" class="btn ghost" title="Today's seeded challenge">Daily</button>
+        <button id="levelsBtn" class="btn ghost" title="Pick a level">Levels</button>
         <button id="mute" class="btn ghost icon" aria-pressed="false" title="Mute / unmute">🔊</button>
+        <div class="settings-wrap">
+          <button id="settings" class="btn ghost icon" aria-haspopup="true" aria-expanded="false" title="Settings">⚙️</button>
+          <div id="settings-panel" class="settings-panel hidden" role="menu" aria-labelledby="settings">
+            <label class="setting"><input type="checkbox" id="pref-reduced"><span>Reduced motion</span></label>
+            <label class="setting"><input type="checkbox" id="pref-shapes"><span>Color-blind shapes</span></label>
+          </div>
+        </div>
       </div>
       <p class="hint">Match 3+ pups in a row. 4-match → striped, L/T → bomb, 5-match → rainbow.</p>
     </footer>
+  </div>
+
+  <div id="levels-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="levels-title">
+    <div class="modal-card">
+      <h2 id="levels-title">Levels</h2>
+      <div id="levels-grid" class="levels-grid"></div>
+      <button id="closeLevels" class="btn ghost">Close</button>
+    </div>
   </div>
 
   <script src="game.js"></script>

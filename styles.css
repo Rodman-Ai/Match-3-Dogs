@@ -176,12 +176,12 @@ html, body {
 }
 
 /* Tile colour accents per dog kind */
-.tile[data-kind="0"] { background: #ffe7c8; }
-.tile[data-kind="1"] { background: #ffd9a8; }
-.tile[data-kind="2"] { background: #e8e8ee; }
-.tile[data-kind="3"] { background: #cfe1f3; }
-.tile[data-kind="4"] { background: #fbd2e3; }
-.tile[data-kind="5"] { background: #efd9bd; }
+.tile[data-kind="0"] { background: #fce5b8; } /* beagle: cream */
+.tile[data-kind="1"] { background: #ffd098; } /* doge: peach */
+.tile[data-kind="2"] { background: #e1e3ee; } /* dalmatian: cool grey */
+.tile[data-kind="3"] { background: #b9d3ee; } /* husky: sky blue */
+.tile[data-kind="4"] { background: #fbb8d4; } /* poodle: pink */
+.tile[data-kind="5"] { background: #b0a8b4; } /* black lab: warm slate (for contrast on black) */
 
 /* Idle dog animations — each kind a slightly different rhythm */
 .tile .dog            { animation: dog-idle 2.4s ease-in-out infinite; }
@@ -211,6 +211,12 @@ html, body {
   opacity: 0;
   transform: translateY(-3px);
   transition: opacity 200ms ease, transform 200ms ease;
+}
+
+/* Some breeds (doge, poodle) wear their tongue out by default */
+.dog .tongue.always {
+  opacity: 0.95;
+  transform: translateY(0);
 }
 
 .tile.selected {
@@ -255,12 +261,15 @@ html, body {
 }
 
 .tile.fall {
-  animation: drop 320ms cubic-bezier(.25, 1.4, .5, 1);
+  animation: drop 460ms cubic-bezier(.36, .04, .29, 1.4);
 }
 
 @keyframes drop {
-  from { transform: translateY(-30%); opacity: 0.6; }
-  to   { transform: translateY(0); opacity: 1; }
+  0%   { transform: translateY(-90%) scale(0.95); opacity: 0; }
+  35%  { opacity: 1; }
+  68%  { transform: translateY(0)    scale(1.04); }
+  82%  { transform: translateY(-3%)  scale(0.99); }
+  100% { transform: translateY(0)    scale(1); opacity: 1; }
 }
 
 .tile.swap-bad {
@@ -387,10 +396,76 @@ html, body {
   border: 1px solid rgba(255,255,255,0.12);
 }
 
+.btn.ghost.active {
+  background: rgba(255, 209, 102, 0.18);
+  border-color: rgba(255, 209, 102, 0.55);
+  color: var(--accent);
+}
+
 .btn.icon {
   padding: 10px 12px;
   font-size: 16px;
 }
+
+/* Settings dropdown */
+.settings-wrap { position: relative; }
+
+.settings-panel {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  min-width: 200px;
+  background: linear-gradient(160deg, #2c1e63, #44267a);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 14px;
+  padding: 10px;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.45);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.settings-panel.hidden { display: none; }
+
+.settings-panel .setting {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--text);
+}
+.settings-panel .setting:hover { background: rgba(255,255,255,0.06); }
+.settings-panel .setting input { width: 16px; height: 16px; accent-color: var(--accent); }
+
+/* Color-blind shape glyphs (rendered inside dogSVG when prefs enables them) */
+.dog .glyph {
+  font-size: 10px;
+  font-weight: 800;
+  fill: rgba(20, 14, 50, 0.8);
+  paint-order: stroke;
+  stroke: rgba(255,255,255,0.85);
+  stroke-width: 0.6;
+  stroke-linejoin: round;
+}
+
+/* Reduced motion: silence everything that bobs, drifts, sways, or bursts. */
+[data-reduced-motion] .dog,
+[data-reduced-motion] .dog .ear-l,
+[data-reduced-motion] .dog .ear-r,
+[data-reduced-motion] .paws,
+[data-reduced-motion] .tile.power-h::before,
+[data-reduced-motion] .tile.power-v::before,
+[data-reduced-motion] .tile.power-bomb::after,
+[data-reduced-motion] .tile.power-rainbow {
+  animation: none !important;
+}
+[data-reduced-motion] .tile.swapping { transition: none !important; }
+[data-reduced-motion] .particle { display: none !important; }
+[data-reduced-motion] .floater { animation-duration: 0.001ms !important; }
+[data-reduced-motion] .combo { animation-duration: 0.001ms !important; }
 
 /* Score floaters */
 .floater {
@@ -487,6 +562,74 @@ html, body {
 @keyframes fadeIn {
   from { opacity: 0; }
   to   { opacity: 1; }
+}
+
+/* Level-select modal (full-viewport, distinct from in-board overlay) */
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 8, 40, 0.78);
+  backdrop-filter: blur(8px);
+  display: grid;
+  place-items: center;
+  z-index: 50;
+  animation: fadeIn 160ms ease;
+  padding: 16px;
+}
+.modal.hidden { display: none; }
+
+.modal-card {
+  background: linear-gradient(160deg, #2c1e63, #44267a);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 20px;
+  padding: 22px 22px 18px;
+  width: min(520px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  text-align: center;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.5);
+}
+.modal-card h2 { margin: 0 0 14px; font-size: 24px; }
+
+.levels-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.level-tile {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 14px;
+  padding: 10px 4px 8px;
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-height: 88px;
+  color: var(--text);
+}
+.level-tile:hover { transform: translateY(-2px); background: rgba(255,255,255,0.1); }
+.level-tile.locked {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.level-tile.locked:hover { transform: none; }
+.level-tile.passed { box-shadow: 0 0 0 1px rgba(255,209,102,0.4) inset; }
+
+.level-tile .num { font-weight: 800; font-size: 20px; line-height: 1; }
+.level-tile .stars-mini { font-size: 12px; letter-spacing: 1px; color: var(--accent); }
+.level-tile .stars-mini .off { color: rgba(255,255,255,0.22); }
+.level-tile .best { font-size: 10px; color: var(--muted); }
+.level-tile .lock { font-size: 16px; }
+
+@media (max-width: 460px) {
+  .levels-grid { grid-template-columns: repeat(5, 1fr); gap: 8px; }
+  .level-tile { padding: 8px 2px; min-height: 80px; }
+  .level-tile .num { font-size: 18px; }
 }
 
 /* Tiny phones */

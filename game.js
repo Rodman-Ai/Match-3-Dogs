@@ -7,42 +7,161 @@
   const GOAL = 1500;
   const BEST_KEY = 'match3dogs:best';
 
-  // 6 dog breeds. Beagle and Doge required by spec; rest add variety.
-  // Order: 0 beagle, 1 doge, 2 dalmatian, 3 husky, 4 poodle, 5 pug.
+  // Per-level configuration (10 hand-tuned stages)
+  const LEVELS = [
+    { goal:  800, moves: 30 },
+    { goal: 1100, moves: 30 },
+    { goal: 1400, moves: 30 },
+    { goal: 1700, moves: 30 },
+    { goal: 2000, moves: 30 },
+    { goal: 2400, moves: 28 },
+    { goal: 2800, moves: 28 },
+    { goal: 3300, moves: 25 },
+    { goal: 3800, moves: 25 },
+    { goal: 4500, moves: 25 },
+  ];
+  const LEVELS_KEY = 'match3dogs:levels';
+
+  // 6 dog breeds, tuned for color diversity and contrast.
+  // Order: 0 beagle, 1 doge/shiba, 2 dalmatian, 3 husky, 4 poodle, 5 black lab.
   const DOG_CONFIGS = [
-    { head: '#f4d4a8', muzzle: '#fff5e0', eyeKind: 'round', eyeColor: '#222',
-      ear: 'droopy', earColor: '#8b5a2b' },
-    { head: '#e8a44c', muzzle: '#fbe6c4', eyeKind: 'smug',  eyeColor: '#222',
-      ear: 'pointy', earColor: '#c97f24' },
-    { head: '#ffffff', muzzle: '#ffffff', eyeKind: 'round', eyeColor: '#222',
-      ear: 'medium', earColor: '#1c1c1c', spots: true },
-    { head: '#a8b8c4', muzzle: '#ffffff', eyeKind: 'round', eyeColor: '#5ac8fa',
-      ear: 'pointy', earColor: '#5a6a78' },
-    { head: '#f8c0d6', muzzle: '#ffffff', eyeKind: 'round', eyeColor: '#222',
-      ear: 'curly',  earColor: '#e89bb9' },
-    { head: '#d6a878', muzzle: '#3a2614', eyeKind: 'round', eyeColor: '#222',
-      ear: 'small',  earColor: '#5a3a20', wrinkle: true },
+    // Beagle: warm tan with deep brown droopy ears
+    { head: '#e8b87a', muzzle: '#fff5e0', eyeKind: 'round', eyeColor: '#222',
+      ear: 'droopy', earColor: '#6b3a1f' },
+    // Doge / Shiba: vivid orange + smug eyes + tongue
+    { head: '#ef8a3c', muzzle: '#fbe6c4', eyeKind: 'smug',  eyeColor: '#222',
+      ear: 'pointy', earColor: '#a04510', tongue: true },
+    // Dalmatian: bright white with crisp black spots and ears
+    { head: '#fafafa', muzzle: '#fafafa', eyeKind: 'round', eyeColor: '#1a1a1a',
+      ear: 'medium', earColor: '#1a1a1a', spots: true },
+    // Husky: blue-grey with high-contrast dark eye + bright blue iris
+    { head: '#8aa6c2', muzzle: '#f5f5f8', eyeKind: 'husky', eyeColor: '#10243f',
+      ear: 'pointy', earColor: '#3d4f64' },
+    // Poodle: hot pink with curly ears and a tongue
+    { head: '#ee84b3', muzzle: '#ffffff', eyeKind: 'round', eyeColor: '#222',
+      ear: 'curly',  earColor: '#c25390', tongue: true },
+    // Black Lab (replaces Pug for contrast): black coat, tan muzzle, white-ringed eyes
+    { head: '#2d2d33', muzzle: '#5b432d', eyeKind: 'pop',   eyeColor: '#1a1a1a',
+      ear: 'medium', earColor: '#1a1a1c' },
   ];
   const KIND_COUNT = DOG_CONFIGS.length;
 
+  // Distinct glyphs per kind for color-blind mode (placed inside dogSVG when enabled)
+  const KIND_GLYPHS = ['★', '▲', '●', '■', '◆', '✚'];
+
+  // --- Accessibility prefs ---
+  const PREFS_KEY = 'match3dogs:prefs';
+  const prefersReducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const prefs = (() => {
+    let parsed = {};
+    try { parsed = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') || {}; } catch {}
+    return {
+      reducedMotion: typeof parsed.reducedMotion === 'boolean' ? parsed.reducedMotion : prefersReducedMotion,
+      shapes: !!parsed.shapes,
+    };
+  })();
+  function savePrefs() { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); }
+  function applyPrefs() {
+    const root = document.documentElement;
+    root.toggleAttribute('data-reduced-motion', prefs.reducedMotion);
+    root.toggleAttribute('data-shapes', prefs.shapes);
+  }
+  applyPrefs();
+
+  // --- Seedable RNG (mulberry32) for daily challenge & level boards ---
+  function mulberry32(seed) {
+    let s = seed >>> 0;
+    return function () {
+      s = (s + 0x6D2B79F5) >>> 0;
+      let t = s;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  // Stable string -> 32-bit hash for date-based seeding
+  function fnv1a(str) {
+    let h = 0x811c9dc5 >>> 0;
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return h >>> 0;
+  }
+  // Default RNG; newGame() reassigns this based on mode.
+  let rng = Math.random;
+
+  // --- Game mode state ---
+  // mode = { kind: 'classic' } | { kind: 'daily', dateKey } | { kind: 'level', n }
+  let mode = { kind: 'classic' };
+
+  // Per-game targets — updated by newGame() based on mode
+  let currentGoal = GOAL;
+  let currentMoves = START_MOVES;
+
+  // --- Level helpers ---
+  function loadLevels() {
+    try { return JSON.parse(localStorage.getItem(LEVELS_KEY) || '{}') || {}; }
+    catch { return {}; }
+  }
+  function saveLevels(rec) {
+    localStorage.setItem(LEVELS_KEY, JSON.stringify(rec));
+  }
+  function levelStarsForScore(n, score) {
+    const cfg = LEVELS[n - 1];
+    if (!cfg) return 0;
+    if (score >= cfg.goal) return 3;
+    if (score >= cfg.goal * 0.66) return 2;
+    if (score >= cfg.goal * 0.33) return 1;
+    return 0;
+  }
+
+  // --- Daily Challenge helpers ---
+  const DAILY_KEY_PREFIX = 'match3dogs:daily:';
+  function todayKey() {
+    const d = new Date();
+    const yyyy = d.getUTCFullYear();
+    const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(d.getUTCDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+  function loadDailyRecord(dateKey) {
+    try { return JSON.parse(localStorage.getItem(DAILY_KEY_PREFIX + dateKey) || '{}') || {}; }
+    catch { return {}; }
+  }
+  function saveDailyRecord(dateKey, rec) {
+    localStorage.setItem(DAILY_KEY_PREFIX + dateKey, JSON.stringify(rec));
+  }
+  function msUntilNextUTC() {
+    const now = new Date();
+    const next = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0);
+    return next - now.getTime();
+  }
+  function fmtCountdown(ms) {
+    const total = Math.max(0, Math.floor(ms / 1000));
+    const h = String(Math.floor(total / 3600)).padStart(2, '0');
+    const m = String(Math.floor((total % 3600) / 60)).padStart(2, '0');
+    const s = String(total % 60).padStart(2, '0');
+    return `${h}:${m}:${s}`;
+  }
+
+  // Ear paths chosen to extend visibly past the head ellipse (cx=30,cy=33,rx=20,ry=18).
   const EAR_PATHS = {
-    droopy: { l: 'M 14,22 Q 4,40 14,48 Q 19,42 19,30 Z',
-              r: 'M 46,22 Q 56,40 46,48 Q 41,42 41,30 Z' },
-    pointy: { l: 'M 12,16 L 6,30 L 22,26 Z',
-              r: 'M 48,16 L 54,30 L 38,26 Z' },
-    medium: { l: 'M 14,18 Q 6,32 14,36 Q 20,30 20,22 Z',
-              r: 'M 46,18 Q 54,32 46,36 Q 40,30 40,22 Z' },
-    small:  { l: 'M 18,18 L 14,28 L 22,26 Z',
-              r: 'M 42,18 L 46,28 L 38,26 Z' },
+    droopy: { l: 'M 12,22 Q 0,42 12,52 Q 19,46 19,30 Z',
+              r: 'M 48,22 Q 60,42 48,52 Q 41,46 41,30 Z' },
+    pointy: { l: 'M 10,6 L 2,28 L 24,24 Z',
+              r: 'M 50,6 L 58,28 L 36,24 Z' },
+    medium: { l: 'M 10,16 Q 0,32 12,40 Q 22,32 22,20 Z',
+              r: 'M 50,16 Q 60,32 48,40 Q 38,32 38,20 Z' },
   };
 
   function earSVG(kind, color) {
     if (kind === 'curly') {
       return `<g class="ear ear-l" fill="${color}">
-          <circle cx="14" cy="22" r="5"/><circle cx="11" cy="18" r="4"/><circle cx="18" cy="26" r="4"/>
+          <circle cx="12" cy="22" r="6"/><circle cx="9" cy="16" r="5"/><circle cx="18" cy="28" r="5"/>
         </g>
         <g class="ear ear-r" fill="${color}">
-          <circle cx="46" cy="22" r="5"/><circle cx="49" cy="18" r="4"/><circle cx="42" cy="26" r="4"/>
+          <circle cx="48" cy="22" r="6"/><circle cx="51" cy="16" r="5"/><circle cx="42" cy="28" r="5"/>
         </g>`;
     }
     const p = EAR_PATHS[kind];
@@ -50,30 +169,63 @@
             <path class="ear ear-r" d="${p.r}" fill="${color}"/>`;
   }
 
+  function eyeMarkup(c) {
+    if (c.eyeKind === 'smug') {
+      return `<path class="eye eye-l" d="M 19,28 Q 22,25 25,28" stroke="${c.eyeColor}" stroke-width="2" fill="none" stroke-linecap="round"/>
+              <path class="eye eye-r" d="M 35,28 Q 38,25 41,28" stroke="${c.eyeColor}" stroke-width="2" fill="none" stroke-linecap="round"/>`;
+    }
+    if (c.eyeKind === 'husky') {
+      // Dark navy outer (visible on grey head) + bright blue iris glint
+      return `<g class="eye eye-l">
+                <circle cx="22" cy="27" r="2.6" fill="${c.eyeColor}"/>
+                <circle cx="22.5" cy="26.4" r="1.0" fill="#5ac8fa"/>
+              </g>
+              <g class="eye eye-r">
+                <circle cx="38" cy="27" r="2.6" fill="${c.eyeColor}"/>
+                <circle cx="38.5" cy="26.4" r="1.0" fill="#5ac8fa"/>
+              </g>`;
+    }
+    if (c.eyeKind === 'pop') {
+      // White sclera + dark pupil (high contrast on black coats)
+      return `<g class="eye eye-l">
+                <circle cx="22" cy="27" r="2.6" fill="#ffffff"/>
+                <circle cx="22" cy="27" r="1.2" fill="${c.eyeColor}"/>
+              </g>
+              <g class="eye eye-r">
+                <circle cx="38" cy="27" r="2.6" fill="#ffffff"/>
+                <circle cx="38" cy="27" r="1.2" fill="${c.eyeColor}"/>
+              </g>`;
+    }
+    // round (default)
+    return `<circle class="eye eye-l" cx="22" cy="27" r="2.3" fill="${c.eyeColor}"/>
+            <circle class="eye eye-r" cx="38" cy="27" r="2.3" fill="${c.eyeColor}"/>`;
+  }
+
   function dogSVG(kind) {
     const c = DOG_CONFIGS[kind];
-    const eyes = c.eyeKind === 'smug'
-      ? `<path class="eye eye-l" d="M 19,28 Q 22,25 25,28" stroke="${c.eyeColor}" stroke-width="2" fill="none" stroke-linecap="round"/>
-         <path class="eye eye-r" d="M 35,28 Q 38,25 41,28" stroke="${c.eyeColor}" stroke-width="2" fill="none" stroke-linecap="round"/>`
-      : `<circle class="eye eye-l" cx="22" cy="27" r="2.3" fill="${c.eyeColor}"/>
-         <circle class="eye eye-r" cx="38" cy="27" r="2.3" fill="${c.eyeColor}"/>`;
+    const eyes = eyeMarkup(c);
     const spots = c.spots
       ? `<g class="spots" fill="#1c1c1c">
            <circle cx="20" cy="22" r="2.4"/><circle cx="40" cy="20" r="1.8"/>
            <circle cx="44" cy="32" r="1.6"/><circle cx="16" cy="36" r="1.8"/>
          </g>` : '';
-    const wrinkle = c.wrinkle
-      ? `<path d="M 24,34 Q 30,32 36,34" stroke="#5a3a20" stroke-width="1.2" fill="none" stroke-linecap="round"/>` : '';
+    const glyph = prefs.shapes
+      ? `<text class="glyph" x="52" y="14" text-anchor="middle">${KIND_GLYPHS[kind]}</text>`
+      : '';
+    // Always-visible tongue for breeds with c.tongue; otherwise hidden tongue
+    // shown only when the tile is selected (existing behaviour).
+    const tongueClass = c.tongue ? 'tongue always' : 'tongue';
+    const tongueRy = c.tongue ? 1.8 : 2.4;
     return `<svg class="dog" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
       ${earSVG(c.ear, c.earColor)}
       <ellipse class="head" cx="30" cy="33" rx="20" ry="18" fill="${c.head}"/>
       ${spots}
       <ellipse class="muzzle" cx="30" cy="40" rx="11" ry="8" fill="${c.muzzle}"/>
-      ${wrinkle}
       <ellipse class="nose" cx="30" cy="35" rx="2.6" ry="2" fill="#222"/>
       ${eyes}
       <path class="mouth" d="M 26,42 Q 30,45 34,42" stroke="#222" stroke-width="1.6" fill="none" stroke-linecap="round"/>
-      <ellipse class="tongue" cx="30" cy="44" rx="3.5" ry="2.4" fill="#ff6b9d"/>
+      <ellipse class="${tongueClass}" cx="30" cy="44.5" rx="3.0" ry="${tongueRy}" fill="#ff6b9d"/>
+      ${glyph}
     </svg>`;
   }
 
@@ -136,6 +288,43 @@
   setMuted(muted); // initialize button label
   muteBtn.addEventListener('click', () => setMuted(!muted));
 
+  // --- Settings dropdown ---
+  const settingsBtn = document.getElementById('settings');
+  const settingsPanel = document.getElementById('settings-panel');
+  const reducedInput = document.getElementById('pref-reduced');
+  const shapesInput = document.getElementById('pref-shapes');
+  reducedInput.checked = prefs.reducedMotion;
+  shapesInput.checked = prefs.shapes;
+
+  function setSettingsOpen(open) {
+    settingsPanel.classList.toggle('hidden', !open);
+    settingsBtn.setAttribute('aria-expanded', String(open));
+  }
+  settingsBtn.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    setSettingsOpen(settingsPanel.classList.contains('hidden'));
+  });
+  document.addEventListener('click', (ev) => {
+    if (!settingsPanel.contains(ev.target) && ev.target !== settingsBtn) {
+      setSettingsOpen(false);
+    }
+  });
+
+  reducedInput.addEventListener('change', () => {
+    prefs.reducedMotion = reducedInput.checked;
+    savePrefs(); applyPrefs();
+  });
+  shapesInput.addEventListener('change', () => {
+    prefs.shapes = shapesInput.checked;
+    savePrefs(); applyPrefs();
+    // Re-render tiles so glyphs appear/disappear immediately
+    if (cells && cells.length) {
+      for (let r = 0; r < ROWS; r++)
+        for (let c = 0; c < COLS; c++)
+          if (cells[r][c]) updateTile(r, c);
+    }
+  });
+
   boardEl.style.setProperty('--cols', COLS);
   boardEl.style.setProperty('--rows', ROWS);
 
@@ -168,7 +357,7 @@
     let k;
     let safety = 0;
     do {
-      k = Math.floor(Math.random() * KIND_COUNT);
+      k = Math.floor(rng() * KIND_COUNT);
       safety++;
     } while (exclude.includes(k) && safety < 20);
     return k;
@@ -478,7 +667,7 @@
   }
 
   function renderStars() {
-    const stars = score >= GOAL ? 3 : (score >= GOAL / 2 ? 2 : (score > 0 ? 1 : 0));
+    const stars = score >= currentGoal ? 3 : (score >= currentGoal * 0.66 ? 2 : (score >= currentGoal * 0.33 ? 1 : 0));
     overlayStarsEl.innerHTML = '';
     for (let i = 0; i < 3; i++) {
       const s = document.createElement('span');
@@ -621,7 +810,7 @@
           }
         }
         for (let r = writeRow; r >= 0; r--) {
-          grid[r][c] = Math.floor(Math.random() * KIND_COUNT);
+          grid[r][c] = Math.floor(rng() * KIND_COUNT);
           powers[r][c] = null;
         }
       }
@@ -725,12 +914,12 @@
       // Power that was at a is now at b. For rainbow, target = kind of the OTHER tile
       // which is now at a (or random if both sides were powers).
       const isRainbow = powers[b.r][b.c] === 'rainbow';
-      const target = isRainbow ? (bIsPower ? Math.floor(Math.random() * KIND_COUNT) : grid[a.r][a.c]) : undefined;
+      const target = isRainbow ? (bIsPower ? Math.floor(rng() * KIND_COUNT) : grid[a.r][a.c]) : undefined;
       triggers.push({ r: b.r, c: b.c, target });
     }
     if (bIsPower) {
       const isRainbow = powers[a.r][a.c] === 'rainbow';
-      const target = isRainbow ? (aIsPower ? Math.floor(Math.random() * KIND_COUNT) : grid[b.r][b.c]) : undefined;
+      const target = isRainbow ? (aIsPower ? Math.floor(rng() * KIND_COUNT) : grid[b.r][b.c]) : undefined;
       triggers.push({ r: a.r, c: a.c, target });
     }
     if (triggers.length) sfx.special();
@@ -759,7 +948,7 @@
     let attempts = 0;
     while (attempts < 50) {
       for (let i = flat.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
+        const j = Math.floor(rng() * (i + 1));
         [flat[i], flat[j]] = [flat[j], flat[i]];
       }
       let i = 0;
@@ -774,18 +963,90 @@
     for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) updateTile(r, c, { animate: 'fall' });
   }
 
+  let countdownTimer = null;
+  function stopCountdown() {
+    if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
+  }
   function endGame() {
     clearHint();
     sfx.end();
     const stars = renderStars();
     overlayTitle.textContent = stars >= 3 ? 'Pawesome!' : stars === 2 ? 'Good run!' : stars === 1 ? 'So close!' : 'Game over';
-    overlayText.textContent = `Score ${score} / ${GOAL}${score > bestAtStart ? ' · New best!' : ''}`;
+
+    if (mode.kind === 'daily') {
+      const rec = loadDailyRecord(mode.dateKey);
+      const isNewBest = !rec.best || score > rec.best;
+      if (isNewBest) saveDailyRecord(mode.dateKey, { best: score, stars });
+      const dailyBest = isNewBest ? score : rec.best;
+      const tick = () => {
+        overlayText.innerHTML = `Daily best: <b>${dailyBest}</b>${isNewBest ? ' · new!' : ''}<br>Next challenge in ${fmtCountdown(msUntilNextUTC())}`;
+      };
+      tick();
+      stopCountdown();
+      countdownTimer = setInterval(tick, 1000);
+      restartBtn.textContent = 'Play Again';
+      restartBtn.onclick = () => newGame();
+    } else if (mode.kind === 'level') {
+      const records = loadLevels();
+      const prev = records[String(mode.n)] || { stars: 0, best: 0 };
+      const newRec = {
+        stars: Math.max(prev.stars, stars),
+        best:  Math.max(prev.best, score),
+      };
+      records[String(mode.n)] = newRec;
+      saveLevels(records);
+      overlayText.textContent = `Level ${mode.n} — ${score} / ${currentGoal}` +
+        (score > prev.best ? ' · New best!' : '');
+      const hasNext = mode.n < LEVELS.length;
+      const passed = stars > 0;
+      if (passed && hasNext) {
+        restartBtn.textContent = 'Next Level →';
+        restartBtn.onclick = () => newGame({ kind: 'level', n: mode.n + 1 });
+      } else {
+        restartBtn.textContent = passed ? 'Play Again' : 'Try Again';
+        restartBtn.onclick = () => newGame();
+      }
+    } else {
+      overlayText.textContent = `Score ${score} / ${currentGoal}${score > bestAtStart ? ' · New best!' : ''}`;
+      restartBtn.textContent = 'Play Again';
+      restartBtn.onclick = () => newGame();
+    }
     overlay.classList.remove('hidden');
   }
 
-  function newGame() {
+  function newGame(nextMode) {
+    if (nextMode) mode = nextMode;
+    stopCountdown();
+    // Set RNG and per-mode score targets
+    if (mode.kind === 'classic') {
+      rng = Math.random;
+    } else if (mode.kind === 'daily') {
+      rng = mulberry32(fnv1a('daily:' + mode.dateKey));
+    } else if (mode.kind === 'level') {
+      // Per-level deterministic seed; consistent across reloads
+      rng = mulberry32((mode.n * 0x9e3779b1) >>> 0);
+    } else {
+      rng = Math.random;
+    }
+    // Per-mode goal and moves
+    if (mode.kind === 'level') {
+      const cfg = LEVELS[mode.n - 1] || LEVELS[LEVELS.length - 1];
+      currentGoal = cfg.goal;
+      currentMoves = cfg.moves;
+    } else {
+      currentGoal = GOAL;
+      currentMoves = START_MOVES;
+    }
+    // Reflect mode in button visuals (buttons are fetched lazily because
+    // newGame() may run before the listener block below has resolved them)
+    const dBtn = document.getElementById('dailyBtn');
+    const lBtn = document.getElementById('levelsBtn');
+    if (dBtn) dBtn.classList.toggle('active', mode.kind === 'daily');
+    if (lBtn) lBtn.classList.toggle('active', mode.kind === 'level');
+    newGameBtn.classList.toggle('active', mode.kind === 'classic');
     setScore(0);
-    setMoves(START_MOVES);
+    setMoves(currentMoves);
+    goalEl.textContent = String(currentGoal);
     overlay.classList.add('hidden');
     selected = null;
     lastSwap = null;
@@ -899,8 +1160,52 @@
   boardEl.addEventListener('pointercancel', endDrag);
 
   // Buttons
-  restartBtn.addEventListener('click', newGame);
-  newGameBtn.addEventListener('click', newGame);
+  // Restart's onclick is set in endGame() so it can vary by mode (Next Level vs Play Again).
+  newGameBtn.addEventListener('click', () => newGame({ kind: 'classic' }));
+  const dailyBtn = document.getElementById('dailyBtn');
+  dailyBtn.addEventListener('click', () => newGame({ kind: 'daily', dateKey: todayKey() }));
+
+  // --- Levels modal ---
+  const levelsBtn = document.getElementById('levelsBtn');
+  const levelsModal = document.getElementById('levels-modal');
+  const levelsGrid = document.getElementById('levels-grid');
+  const closeLevelsBtn = document.getElementById('closeLevels');
+
+  function renderLevelsGrid() {
+    const records = loadLevels();
+    levelsGrid.innerHTML = '';
+    for (let n = 1; n <= LEVELS.length; n++) {
+      const rec = records[String(n)] || { stars: 0, best: 0 };
+      const prevRec = records[String(n - 1)];
+      const unlocked = n === 1 || (prevRec && prevRec.stars >= 1);
+      const tile = document.createElement('button');
+      tile.type = 'button';
+      tile.className = 'level-tile' + (unlocked ? '' : ' locked') + (rec.stars > 0 ? ' passed' : '');
+      tile.disabled = !unlocked;
+      const starsHTML = [0, 1, 2].map(i => i < rec.stars ? '★' : '<span class="off">★</span>').join('');
+      tile.innerHTML = unlocked
+        ? `<span class="num">${n}</span>
+           <span class="stars-mini">${starsHTML}</span>
+           <span class="best">${rec.best ? rec.best : '—'}</span>`
+        : `<span class="num">${n}</span>
+           <span class="lock">🔒</span>`;
+      tile.addEventListener('click', () => {
+        if (!unlocked) return;
+        levelsModal.classList.add('hidden');
+        newGame({ kind: 'level', n });
+      });
+      levelsGrid.appendChild(tile);
+    }
+  }
+
+  levelsBtn.addEventListener('click', () => {
+    renderLevelsGrid();
+    levelsModal.classList.remove('hidden');
+  });
+  closeLevelsBtn.addEventListener('click', () => levelsModal.classList.add('hidden'));
+  levelsModal.addEventListener('click', (ev) => {
+    if (ev.target === levelsModal) levelsModal.classList.add('hidden');
+  });
 
   // Prevent context menu on long-press
   boardEl.addEventListener('contextmenu', (e) => e.preventDefault());
