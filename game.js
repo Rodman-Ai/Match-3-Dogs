@@ -4,9 +4,77 @@
   const COLS = 8;
   const ROWS = 8;
   const START_MOVES = 30;
-  const DOGS = ['🐕', '🐩', '🐶', '🦮', '🐕‍🦺', '🌭']; // 6 dog "kinds" (last is hot dog for fun)
-  const KIND_COUNT = DOGS.length;
   const BEST_KEY = 'match3dogs:best';
+
+  // 6 dog breeds. Beagle and Doge required by spec; rest add variety.
+  // Order: 0 beagle, 1 doge, 2 dalmatian, 3 husky, 4 poodle, 5 pug.
+  const DOG_CONFIGS = [
+    { head: '#f4d4a8', muzzle: '#fff5e0', eyeKind: 'round', eyeColor: '#222',
+      ear: 'droopy', earColor: '#8b5a2b' },
+    { head: '#e8a44c', muzzle: '#fbe6c4', eyeKind: 'smug',  eyeColor: '#222',
+      ear: 'pointy', earColor: '#c97f24' },
+    { head: '#ffffff', muzzle: '#ffffff', eyeKind: 'round', eyeColor: '#222',
+      ear: 'medium', earColor: '#1c1c1c', spots: true },
+    { head: '#a8b8c4', muzzle: '#ffffff', eyeKind: 'round', eyeColor: '#5ac8fa',
+      ear: 'pointy', earColor: '#5a6a78' },
+    { head: '#f8c0d6', muzzle: '#ffffff', eyeKind: 'round', eyeColor: '#222',
+      ear: 'curly',  earColor: '#e89bb9' },
+    { head: '#d6a878', muzzle: '#3a2614', eyeKind: 'round', eyeColor: '#222',
+      ear: 'small',  earColor: '#5a3a20', wrinkle: true },
+  ];
+  const KIND_COUNT = DOG_CONFIGS.length;
+
+  const EAR_PATHS = {
+    droopy: { l: 'M 14,22 Q 4,40 14,48 Q 19,42 19,30 Z',
+              r: 'M 46,22 Q 56,40 46,48 Q 41,42 41,30 Z' },
+    pointy: { l: 'M 12,16 L 6,30 L 22,26 Z',
+              r: 'M 48,16 L 54,30 L 38,26 Z' },
+    medium: { l: 'M 14,18 Q 6,32 14,36 Q 20,30 20,22 Z',
+              r: 'M 46,18 Q 54,32 46,36 Q 40,30 40,22 Z' },
+    small:  { l: 'M 18,18 L 14,28 L 22,26 Z',
+              r: 'M 42,18 L 46,28 L 38,26 Z' },
+  };
+
+  function earSVG(kind, color) {
+    if (kind === 'curly') {
+      return `<g class="ear ear-l" fill="${color}">
+          <circle cx="14" cy="22" r="5"/><circle cx="11" cy="18" r="4"/><circle cx="18" cy="26" r="4"/>
+        </g>
+        <g class="ear ear-r" fill="${color}">
+          <circle cx="46" cy="22" r="5"/><circle cx="49" cy="18" r="4"/><circle cx="42" cy="26" r="4"/>
+        </g>`;
+    }
+    const p = EAR_PATHS[kind];
+    return `<path class="ear ear-l" d="${p.l}" fill="${color}"/>
+            <path class="ear ear-r" d="${p.r}" fill="${color}"/>`;
+  }
+
+  function dogSVG(kind) {
+    const c = DOG_CONFIGS[kind];
+    const eyes = c.eyeKind === 'smug'
+      ? `<path class="eye eye-l" d="M 19,28 Q 22,25 25,28" stroke="${c.eyeColor}" stroke-width="2" fill="none" stroke-linecap="round"/>
+         <path class="eye eye-r" d="M 35,28 Q 38,25 41,28" stroke="${c.eyeColor}" stroke-width="2" fill="none" stroke-linecap="round"/>`
+      : `<circle class="eye eye-l" cx="22" cy="27" r="2.3" fill="${c.eyeColor}"/>
+         <circle class="eye eye-r" cx="38" cy="27" r="2.3" fill="${c.eyeColor}"/>`;
+    const spots = c.spots
+      ? `<g class="spots" fill="#1c1c1c">
+           <circle cx="20" cy="22" r="2.4"/><circle cx="40" cy="20" r="1.8"/>
+           <circle cx="44" cy="32" r="1.6"/><circle cx="16" cy="36" r="1.8"/>
+         </g>` : '';
+    const wrinkle = c.wrinkle
+      ? `<path d="M 24,34 Q 30,32 36,34" stroke="#5a3a20" stroke-width="1.2" fill="none" stroke-linecap="round"/>` : '';
+    return `<svg class="dog" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      ${earSVG(c.ear, c.earColor)}
+      <ellipse class="head" cx="30" cy="33" rx="20" ry="18" fill="${c.head}"/>
+      ${spots}
+      <ellipse class="muzzle" cx="30" cy="40" rx="11" ry="8" fill="${c.muzzle}"/>
+      ${wrinkle}
+      <ellipse class="nose" cx="30" cy="35" rx="2.6" ry="2" fill="#222"/>
+      ${eyes}
+      <path class="mouth" d="M 26,42 Q 30,45 34,42" stroke="#222" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+      <ellipse class="tongue" cx="30" cy="44" rx="3.5" ry="2.4" fill="#ff6b9d"/>
+    </svg>`;
+  }
 
   const boardEl = document.getElementById('board');
   const scoreEl = document.getElementById('score');
@@ -67,7 +135,7 @@
         tile.dataset.r = String(r);
         tile.dataset.c = String(c);
         tile.dataset.kind = String(grid[r][c]);
-        tile.textContent = DOGS[grid[r][c]];
+        tile.innerHTML = dogSVG(grid[r][c]);
         cells[r][c] = tile;
         boardEl.appendChild(tile);
       }
@@ -78,7 +146,7 @@
     const t = cells[r][c];
     if (!t) return;
     t.dataset.kind = String(grid[r][c]);
-    t.textContent = DOGS[grid[r][c]];
+    t.innerHTML = dogSVG(grid[r][c]);
     if (animate === 'fall') {
       t.classList.remove('fall');
       // force reflow so animation restarts
