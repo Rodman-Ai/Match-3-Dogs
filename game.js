@@ -7,6 +7,21 @@
   const GOAL = 1500;
   const BEST_KEY = 'match3dogs:best';
 
+  // Per-level configuration (10 hand-tuned stages)
+  const LEVELS = [
+    { goal:  800, moves: 30 },
+    { goal: 1100, moves: 30 },
+    { goal: 1400, moves: 30 },
+    { goal: 1700, moves: 30 },
+    { goal: 2000, moves: 30 },
+    { goal: 2400, moves: 28 },
+    { goal: 2800, moves: 28 },
+    { goal: 3300, moves: 25 },
+    { goal: 3800, moves: 25 },
+    { goal: 4500, moves: 25 },
+  ];
+  const LEVELS_KEY = 'match3dogs:levels';
+
   // 6 dog breeds. Beagle and Doge required by spec; rest add variety.
   // Order: 0 beagle, 1 doge, 2 dalmatian, 3 husky, 4 poodle, 5 pug.
   const DOG_CONFIGS = [
@@ -73,6 +88,27 @@
   // --- Game mode state ---
   // mode = { kind: 'classic' } | { kind: 'daily', dateKey } | { kind: 'level', n }
   let mode = { kind: 'classic' };
+
+  // Per-game targets — updated by newGame() based on mode
+  let currentGoal = GOAL;
+  let currentMoves = START_MOVES;
+
+  // --- Level helpers ---
+  function loadLevels() {
+    try { return JSON.parse(localStorage.getItem(LEVELS_KEY) || '{}') || {}; }
+    catch { return {}; }
+  }
+  function saveLevels(rec) {
+    localStorage.setItem(LEVELS_KEY, JSON.stringify(rec));
+  }
+  function levelStarsForScore(n, score) {
+    const cfg = LEVELS[n - 1];
+    if (!cfg) return 0;
+    if (score >= cfg.goal) return 3;
+    if (score >= cfg.goal * 0.66) return 2;
+    if (score >= cfg.goal * 0.33) return 1;
+    return 0;
+  }
 
   // --- Daily Challenge helpers ---
   const DAILY_KEY_PREFIX = 'match3dogs:daily:';
@@ -597,7 +633,7 @@
   }
 
   function renderStars() {
-    const stars = score >= GOAL ? 3 : (score >= GOAL / 2 ? 2 : (score > 0 ? 1 : 0));
+    const stars = score >= currentGoal ? 3 : (score >= currentGoal * 0.66 ? 2 : (score >= currentGoal * 0.33 ? 1 : 0));
     overlayStarsEl.innerHTML = '';
     for (let i = 0; i < 3; i++) {
       const s = document.createElement('span');
@@ -914,8 +950,32 @@
       tick();
       stopCountdown();
       countdownTimer = setInterval(tick, 1000);
+      restartBtn.textContent = 'Play Again';
+      restartBtn.onclick = () => newGame();
+    } else if (mode.kind === 'level') {
+      const records = loadLevels();
+      const prev = records[String(mode.n)] || { stars: 0, best: 0 };
+      const newRec = {
+        stars: Math.max(prev.stars, stars),
+        best:  Math.max(prev.best, score),
+      };
+      records[String(mode.n)] = newRec;
+      saveLevels(records);
+      overlayText.textContent = `Level ${mode.n} — ${score} / ${currentGoal}` +
+        (score > prev.best ? ' · New best!' : '');
+      const hasNext = mode.n < LEVELS.length;
+      const passed = stars > 0;
+      if (passed && hasNext) {
+        restartBtn.textContent = 'Next Level →';
+        restartBtn.onclick = () => newGame({ kind: 'level', n: mode.n + 1 });
+      } else {
+        restartBtn.textContent = passed ? 'Play Again' : 'Try Again';
+        restartBtn.onclick = () => newGame();
+      }
     } else {
-      overlayText.textContent = `Score ${score} / ${GOAL}${score > bestAtStart ? ' · New best!' : ''}`;
+      overlayText.textContent = `Score ${score} / ${currentGoal}${score > bestAtStart ? ' · New best!' : ''}`;
+      restartBtn.textContent = 'Play Again';
+      restartBtn.onclick = () => newGame();
     }
     overlay.classList.remove('hidden');
   }
@@ -934,13 +994,23 @@
     } else {
       rng = Math.random;
     }
+    // Per-mode goal and moves
+    if (mode.kind === 'level') {
+      const cfg = LEVELS[mode.n - 1] || LEVELS[LEVELS.length - 1];
+      currentGoal = cfg.goal;
+      currentMoves = cfg.moves;
+    } else {
+      currentGoal = GOAL;
+      currentMoves = START_MOVES;
+    }
     // Reflect mode in button visuals (the dailyBtn is fetched lazily because
     // newGame() may run before the listener block below has resolved it)
     const dBtn = document.getElementById('dailyBtn');
     if (dBtn) dBtn.classList.toggle('active', mode.kind === 'daily');
     newGameBtn.classList.toggle('active', mode.kind === 'classic');
     setScore(0);
-    setMoves(START_MOVES);
+    setMoves(currentMoves);
+    goalEl.textContent = String(currentGoal);
     overlay.classList.add('hidden');
     selected = null;
     lastSwap = null;
@@ -1054,8 +1124,7 @@
   boardEl.addEventListener('pointercancel', endDrag);
 
   // Buttons
-  // Restart preserves the current mode; New Game and Daily switch modes explicitly.
-  restartBtn.addEventListener('click', () => newGame());
+  // Restart's onclick is set in endGame() so it can vary by mode (Next Level vs Play Again).
   newGameBtn.addEventListener('click', () => newGame({ kind: 'classic' }));
   const dailyBtn = document.getElementById('dailyBtn');
   dailyBtn.addEventListener('click', () => newGame({ kind: 'daily', dateKey: todayKey() }));
