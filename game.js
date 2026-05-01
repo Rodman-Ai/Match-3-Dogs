@@ -400,8 +400,8 @@
     if (!t) return;
     t.dataset.kind = String(grid[r][c]);
     t.innerHTML = dogSVG(grid[r][c]);
-    // Reset power classes, then re-apply current
-    t.classList.remove('power-h', 'power-v', 'power-bomb', 'power-rainbow');
+    // Clear stale animation/state classes; re-apply current power class
+    t.classList.remove('power-h', 'power-v', 'power-bomb', 'power-rainbow', 'match', 'swap-bad');
     if (powers[r][c]) t.classList.add(POWER_CLASS[powers[r][c]]);
     if (animate === 'fall') {
       t.classList.remove('fall');
@@ -782,6 +782,11 @@
 
       await delay(280);
 
+      // Snapshot grid+powers before gravity so we can animate only the
+      // cells that actually move or change kind/power.
+      const beforeGrid = grid.map(row => row.slice());
+      const beforePowers = powers.map(row => row.slice());
+
       // 4. Remove cleared cells
       for (const [r, c] of matchedCoords) {
         grid[r][c] = -1;
@@ -815,10 +820,13 @@
         }
       }
 
-      // 7. Re-render
+      // 7. Re-render only cells that changed (or were just cleared)
       for (let r = 0; r < ROWS; r++) {
         for (let c = 0; c < COLS; c++) {
-          updateTile(r, c, { animate: 'fall' });
+          const moved = clearGrid[r][c]
+            || beforeGrid[r][c] !== grid[r][c]
+            || beforePowers[r][c] !== powers[r][c];
+          if (moved) updateTile(r, c, { animate: 'fall' });
         }
       }
 
