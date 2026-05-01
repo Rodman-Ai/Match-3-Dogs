@@ -85,6 +85,51 @@
   const overlayText  = document.getElementById('overlay-text');
   const restartBtn = document.getElementById('restart');
   const newGameBtn = document.getElementById('newGame');
+  const muteBtn = document.getElementById('mute');
+
+  // --- Sound (WebAudio, no external assets) ---
+  const MUTE_KEY = 'match3dogs:muted';
+  let muted = localStorage.getItem(MUTE_KEY) === '1';
+  let audioCtx = null;
+  function ensureAudio() {
+    if (!audioCtx) {
+      try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+      catch { audioCtx = null; }
+    }
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    return audioCtx;
+  }
+  function tone(freq, dur, type = 'sine', vol = 0.08, when = 0) {
+    if (muted) return;
+    const ctx = ensureAudio();
+    if (!ctx) return;
+    const t = ctx.currentTime + when;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, t);
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(vol, t + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(t); osc.stop(t + dur + 0.02);
+  }
+  const sfx = {
+    swap:    () => tone(520, 0.08, 'square', 0.06),
+    bad:     () => { tone(180, 0.10, 'square', 0.06); tone(140, 0.10, 'square', 0.06, 0.05); },
+    match:   () => { tone(523, 0.12, 'triangle'); tone(659, 0.12, 'triangle', 0.08, 0.05); tone(784, 0.14, 'triangle', 0.08, 0.10); },
+    special: () => { tone(659, 0.10, 'sawtooth'); tone(880, 0.12, 'sawtooth', 0.08, 0.05); tone(1175, 0.18, 'sawtooth', 0.08, 0.12); },
+    bonus:   () => tone(988, 0.14, 'triangle', 0.09),
+    end:     () => { tone(392, 0.18, 'sine', 0.08); tone(523, 0.20, 'sine', 0.08, 0.10); tone(659, 0.24, 'sine', 0.08, 0.22); tone(784, 0.32, 'sine', 0.08, 0.36); },
+  };
+  function setMuted(next) {
+    muted = next;
+    localStorage.setItem(MUTE_KEY, muted ? '1' : '0');
+    muteBtn.textContent = muted ? '🔇' : '🔊';
+    muteBtn.setAttribute('aria-pressed', String(muted));
+  }
+  setMuted(muted); // initialize button label
+  muteBtn.addEventListener('click', () => setMuted(!muted));
 
   boardEl.style.setProperty('--cols', COLS);
   boardEl.style.setProperty('--rows', ROWS);
@@ -387,6 +432,8 @@
       // 1. Classify natural matches into power-up creations (so spared cells survive)
       const { newPowers, spared } = matchCount > 0 ? classifyMatches() : { newPowers: [], spared: new Set() };
       const powerCells = new Set(newPowers.map(p => `${p.r},${p.c}`));
+      if (matchCount > 0) sfx.match();
+      if (newPowers.length > 0 || pending.length > 0) sfx.special();
 
       // 2. Compute clears: matched (minus spared) + expansions from triggered power-ups
       const clearGrid = emptyBoolGrid();
@@ -497,6 +544,46 @@
     return { chain, totalGained };
   }
 
+  // --- Hint system ---
+  const HINT_DELAY_MS = 5000;
+  let hintTimer = null;
+  let hintTiles = [];
+  function clearHint() {
+    for (const t of hintTiles) t && t.classList.remove('hint');
+    hintTiles = [];
+    if (hintTimer) { clearTimeout(hintTimer); hintTimer = null; }
+  }
+  function scheduleHint() {
+    clearHint();
+    hintTimer = setTimeout(showHint, HINT_DELAY_MS);
+  }
+  function showHint() {
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        // Power-ups always have a useful swap, suggest one
+        if (powers[r][c]) {
+          const ns = neighbors(r, c);
+          if (ns.length) {
+            const [nr, nc] = ns[0];
+            hintTiles = [cells[r][c], cells[nr][nc]];
+            hintTiles.forEach(t => t.classList.add('hint'));
+            return;
+          }
+        }
+        if (c + 1 < COLS && wouldMatch({ r, c }, { r, c: c + 1 })) {
+          hintTiles = [cells[r][c], cells[r][c + 1]];
+          hintTiles.forEach(t => t.classList.add('hint'));
+          return;
+        }
+        if (r + 1 < ROWS && wouldMatch({ r, c }, { r: r + 1, c })) {
+          hintTiles = [cells[r][c], cells[r + 1][c]];
+          hintTiles.forEach(t => t.classList.add('hint'));
+          return;
+        }
+      }
+    }
+  }
+
   function swapPowers(a, b) {
     const t = powers[a.r][a.c];
     powers[a.r][a.c] = powers[b.r][b.c];
@@ -538,6 +625,7 @@
       // invalid: revert with shake
       swap(a, b);
       swapPowers(a, b);
+      sfx.bad();
       tileA.classList.add('swap-bad');
       tileB.classList.add('swap-bad');
       await delay(280);
@@ -548,6 +636,8 @@
     }
 
     // commit: update visuals, count move, remember swap site for power-up placement
+    sfx.swap();
+    if (triggers.length) sfx.special();
     updateTile(a.r, a.c);
     updateTile(b.r, b.c);
     setMoves(moves - 1);
@@ -562,6 +652,7 @@
 
     busy = false;
     if (moves <= 0) endGame();
+    else scheduleHint();
   }
 
   function reshuffleInPlace() {
@@ -587,6 +678,8 @@
   }
 
   function endGame() {
+    clearHint();
+    sfx.end();
     overlayTitle.textContent = 'Pawesome!';
     overlayText.textContent = `Final score: ${score}${score >= best ? '  ·  New best!' : ''}`;
     overlay.classList.remove('hidden');
@@ -602,7 +695,7 @@
     buildInitialGrid();
     render();
     busy = true;
-    clearAndRefill().then(() => { busy = false; });
+    clearAndRefill().then(() => { busy = false; scheduleHint(); });
   }
 
   function selectTile(r, c) {
@@ -645,8 +738,12 @@
 
   boardEl.addEventListener('pointerdown', (ev) => {
     if (busy) return;
-    const t = ev.target;
-    if (!t || !t.classList || !t.classList.contains('tile')) return;
+    clearHint();
+    ensureAudio();
+    // The dog SVG sits inside the tile and may be the actual event.target;
+    // walk up to the tile container.
+    const t = ev.target && ev.target.closest && ev.target.closest('.tile');
+    if (!t) return;
     const r = Number(t.dataset.r), c = Number(t.dataset.c);
     dragStart = { r, c, x: ev.clientX, y: ev.clientY, moved: false };
     try { boardEl.setPointerCapture(ev.pointerId); } catch {}
