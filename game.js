@@ -4,6 +4,7 @@
   const COLS = 8;
   const ROWS = 8;
   const START_MOVES = 30;
+  const GOAL = 1500;
   const BEST_KEY = 'match3dogs:best';
 
   // 6 dog breeds. Beagle and Doge required by spec; rest add variety.
@@ -86,6 +87,10 @@
   const restartBtn = document.getElementById('restart');
   const newGameBtn = document.getElementById('newGame');
   const muteBtn = document.getElementById('mute');
+  const goalEl = document.getElementById('goal');
+  const comboEl = document.getElementById('combo');
+  const overlayStarsEl = document.getElementById('overlay-stars');
+  goalEl.textContent = String(GOAL);
 
   // --- Sound (WebAudio, no external assets) ---
   const MUTE_KEY = 'match3dogs:muted';
@@ -146,6 +151,7 @@
   let busy = false;
   let selected = null; // {r,c}
   let lastSwap = null; // {a:{r,c}, b:{r,c}} - to bias power-up placement
+  let bestAtStart = best;
 
   const POWER_CLASS = { h: 'power-h', v: 'power-v', bomb: 'power-bomb', rainbow: 'power-rainbow' };
 
@@ -217,8 +223,16 @@
   }
 
   function setScore(v) {
+    const grew = v > score;
     score = v;
     scoreEl.textContent = String(score);
+    if (grew) {
+      const stat = scoreEl.parentElement;
+      stat.classList.remove('pulse');
+      void stat.offsetWidth;
+      stat.classList.add('pulse');
+      setTimeout(() => stat.classList.remove('pulse'), 460);
+    }
     if (score > best) {
       best = score;
       bestEl.textContent = String(best);
@@ -227,8 +241,16 @@
   }
 
   function setMoves(v) {
+    const grew = v > moves;
     moves = v;
     movesEl.textContent = String(moves);
+    movesEl.classList.toggle('low', moves > 0 && moves <= 5);
+    if (grew) {
+      movesEl.classList.remove('bonus');
+      void movesEl.offsetWidth;
+      movesEl.classList.add('bonus');
+      setTimeout(() => movesEl.classList.remove('bonus'), 460);
+    }
   }
 
   function neighbors(r, c) {
@@ -418,6 +440,74 @@
     setTimeout(() => f.remove(), 900);
   }
 
+  // Combo banner shown for chains of 2+
+  const COMBO_TEXTS = { 2: 'Nice!', 3: 'Great!', 4: 'Pawesome!' };
+  function showCombo(chain) {
+    if (chain < 2) return;
+    comboEl.textContent = chain >= 5 ? 'Wow!' : (COMBO_TEXTS[chain] || 'Combo!');
+    comboEl.classList.remove('hidden');
+    comboEl.style.animation = 'none';
+    void comboEl.offsetWidth;
+    comboEl.style.animation = '';
+    clearTimeout(showCombo._t);
+    showCombo._t = setTimeout(() => comboEl.classList.add('hidden'), 900);
+  }
+
+  const PARTICLE_SYMBOLS = ['❤', '🐾', '✨'];
+  function spawnParticles(r, c, count = 3) {
+    const tile = cells[r][c];
+    if (!tile) return;
+    const rect = tile.getBoundingClientRect();
+    const boardRect = boardEl.getBoundingClientRect();
+    const baseX = rect.left - boardRect.left + rect.width / 2;
+    const baseY = rect.top - boardRect.top + rect.height / 2;
+    for (let i = 0; i < count; i++) {
+      const p = document.createElement('span');
+      p.className = 'particle';
+      p.textContent = PARTICLE_SYMBOLS[Math.floor(Math.random() * PARTICLE_SYMBOLS.length)];
+      p.style.left = `${baseX - 8}px`;
+      p.style.top  = `${baseY - 8}px`;
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 28 + Math.random() * 28;
+      p.style.setProperty('--dx', `${Math.cos(angle) * dist}px`);
+      p.style.setProperty('--dy', `${Math.sin(angle) * dist - 12}px`);
+      p.style.setProperty('--rot', `${Math.random() * 90 - 45}deg`);
+      boardEl.appendChild(p);
+      setTimeout(() => p.remove(), 820);
+    }
+  }
+
+  function renderStars() {
+    const stars = score >= GOAL ? 3 : (score >= GOAL / 2 ? 2 : (score > 0 ? 1 : 0));
+    overlayStarsEl.innerHTML = '';
+    for (let i = 0; i < 3; i++) {
+      const s = document.createElement('span');
+      s.className = 'star ' + (i < stars ? 'on' : 'off');
+      s.textContent = '★';
+      overlayStarsEl.appendChild(s);
+    }
+    return stars;
+  }
+
+  async function tweenSwap(a, b) {
+    const tileA = cells[a.r][a.c];
+    const tileB = cells[b.r][b.c];
+    const rectA = tileA.getBoundingClientRect();
+    const rectB = tileB.getBoundingClientRect();
+    const dx = rectB.left - rectA.left;
+    const dy = rectB.top - rectA.top;
+    tileA.classList.add('swapping');
+    tileB.classList.add('swapping');
+    void tileA.offsetWidth; // commit base state with transition active
+    tileA.style.transform = `translate(${dx}px, ${dy}px)`;
+    tileB.style.transform = `translate(${-dx}px, ${-dy}px)`;
+    await delay(200);
+    tileA.classList.remove('swapping');
+    tileB.classList.remove('swapping');
+    tileA.style.transform = '';
+    tileB.style.transform = '';
+  }
+
   async function clearAndRefill(initialTriggers = []) {
     let chain = 0;
     let totalGained = 0;
@@ -481,6 +571,8 @@
           if (clearGrid[r][c]) {
             matchedCoords.push([r, c]);
             cells[r][c].classList.add('match');
+            // Heart/paw particles on a subset of cleared cells (cap to avoid DOM thrash)
+            if (matchedCoords.length <= 8) spawnParticles(r, c, 2);
           }
         }
       }
@@ -491,6 +583,12 @@
       if (cleared > 0) {
         const [r0, c0] = matchedCoords[0];
         showFloater(`+${gained}`, r0, c0);
+      }
+      showCombo(chain);
+      // Streak bonus: every chain >= 3 grants +1 move
+      if (chain >= 3) {
+        setMoves(moves + 1);
+        sfx.bonus();
       }
 
       await delay(280);
@@ -600,31 +698,11 @@
 
     const aIsPower = !!powers[a.r][a.c];
     const bIsPower = !!powers[b.r][b.c];
+    const isPowerSwap = aIsPower || bIsPower;
 
-    swap(a, b);
-    swapPowers(a, b);
-
-    // Power-up swaps are always valid; otherwise require a match
-    const triggers = [];
-    if (aIsPower || bIsPower) {
-      // After the swap, the power-up that was at (a) is now at (b) and vice versa.
-      if (aIsPower) {
-        // The power that was at a is now at b. Trigger it.
-        const target = powers[b.r][b.c] === 'rainbow'
-          ? (bIsPower ? Math.floor(Math.random() * KIND_COUNT) : grid[b.r][b.c])
-          : undefined;
-        triggers.push({ r: b.r, c: b.c, target });
-      }
-      if (bIsPower) {
-        const target = powers[a.r][a.c] === 'rainbow'
-          ? (aIsPower ? Math.floor(Math.random() * KIND_COUNT) : grid[a.r][a.c])
-          : undefined;
-        triggers.push({ r: a.r, c: a.c, target });
-      }
-    } else if (countMatches(findMatches()) === 0) {
-      // invalid: revert with shake
-      swap(a, b);
-      swapPowers(a, b);
+    // Validate without committing the swap so invalid swaps don't tween
+    const valid = isPowerSwap || wouldMatch(a, b);
+    if (!valid) {
       sfx.bad();
       tileA.classList.add('swap-bad');
       tileB.classList.add('swap-bad');
@@ -635,9 +713,28 @@
       return;
     }
 
-    // commit: update visuals, count move, remember swap site for power-up placement
+    // Tween the visual swap, then commit grid + powers
     sfx.swap();
+    await tweenSwap(a, b);
+    swap(a, b);
+    swapPowers(a, b);
+
+    // Build trigger list for any power-ups now at the swap sites
+    const triggers = [];
+    if (aIsPower) {
+      // Power that was at a is now at b. For rainbow, target = kind of the OTHER tile
+      // which is now at a (or random if both sides were powers).
+      const isRainbow = powers[b.r][b.c] === 'rainbow';
+      const target = isRainbow ? (bIsPower ? Math.floor(Math.random() * KIND_COUNT) : grid[a.r][a.c]) : undefined;
+      triggers.push({ r: b.r, c: b.c, target });
+    }
+    if (bIsPower) {
+      const isRainbow = powers[a.r][a.c] === 'rainbow';
+      const target = isRainbow ? (aIsPower ? Math.floor(Math.random() * KIND_COUNT) : grid[b.r][b.c]) : undefined;
+      triggers.push({ r: a.r, c: a.c, target });
+    }
     if (triggers.length) sfx.special();
+
     updateTile(a.r, a.c);
     updateTile(b.r, b.c);
     setMoves(moves - 1);
@@ -680,8 +777,9 @@
   function endGame() {
     clearHint();
     sfx.end();
-    overlayTitle.textContent = 'Pawesome!';
-    overlayText.textContent = `Final score: ${score}${score >= best ? '  ·  New best!' : ''}`;
+    const stars = renderStars();
+    overlayTitle.textContent = stars >= 3 ? 'Pawesome!' : stars === 2 ? 'Good run!' : stars === 1 ? 'So close!' : 'Game over';
+    overlayText.textContent = `Score ${score} / ${GOAL}${score > bestAtStart ? ' · New best!' : ''}`;
     overlay.classList.remove('hidden');
   }
 
@@ -691,9 +789,24 @@
     overlay.classList.add('hidden');
     selected = null;
     lastSwap = null;
+    bestAtStart = best;
     powers = emptyPowers();
     buildInitialGrid();
     render();
+    // Staggered reveal: each row falls in slightly later than the one above it
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const t = cells[r][c];
+        if (!t) continue;
+        t.style.animation = 'none';
+        void t.offsetWidth;
+        t.style.animation = '';
+        t.classList.remove('fall');
+        t.style.animationDelay = `${r * 35}ms`;
+        t.classList.add('fall');
+        setTimeout(((tile) => () => { tile.style.animationDelay = ''; tile.classList.remove('fall'); })(t), 320 + r * 35 + 50);
+      }
+    }
     busy = true;
     clearAndRefill().then(() => { busy = false; scheduleHint(); });
   }
