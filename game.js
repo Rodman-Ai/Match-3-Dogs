@@ -25,6 +25,28 @@
   ];
   const KIND_COUNT = DOG_CONFIGS.length;
 
+  // Distinct glyphs per kind for color-blind mode (placed inside dogSVG when enabled)
+  const KIND_GLYPHS = ['★', '▲', '●', '■', '◆', '✚'];
+
+  // --- Accessibility prefs ---
+  const PREFS_KEY = 'match3dogs:prefs';
+  const prefersReducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const prefs = (() => {
+    let parsed = {};
+    try { parsed = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') || {}; } catch {}
+    return {
+      reducedMotion: typeof parsed.reducedMotion === 'boolean' ? parsed.reducedMotion : prefersReducedMotion,
+      shapes: !!parsed.shapes,
+    };
+  })();
+  function savePrefs() { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); }
+  function applyPrefs() {
+    const root = document.documentElement;
+    root.toggleAttribute('data-reduced-motion', prefs.reducedMotion);
+    root.toggleAttribute('data-shapes', prefs.shapes);
+  }
+  applyPrefs();
+
   const EAR_PATHS = {
     droopy: { l: 'M 14,22 Q 4,40 14,48 Q 19,42 19,30 Z',
               r: 'M 46,22 Q 56,40 46,48 Q 41,42 41,30 Z' },
@@ -64,6 +86,9 @@
          </g>` : '';
     const wrinkle = c.wrinkle
       ? `<path d="M 24,34 Q 30,32 36,34" stroke="#5a3a20" stroke-width="1.2" fill="none" stroke-linecap="round"/>` : '';
+    const glyph = prefs.shapes
+      ? `<text class="glyph" x="52" y="14" text-anchor="middle">${KIND_GLYPHS[kind]}</text>`
+      : '';
     return `<svg class="dog" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
       ${earSVG(c.ear, c.earColor)}
       <ellipse class="head" cx="30" cy="33" rx="20" ry="18" fill="${c.head}"/>
@@ -74,6 +99,7 @@
       ${eyes}
       <path class="mouth" d="M 26,42 Q 30,45 34,42" stroke="#222" stroke-width="1.6" fill="none" stroke-linecap="round"/>
       <ellipse class="tongue" cx="30" cy="44" rx="3.5" ry="2.4" fill="#ff6b9d"/>
+      ${glyph}
     </svg>`;
   }
 
@@ -135,6 +161,43 @@
   }
   setMuted(muted); // initialize button label
   muteBtn.addEventListener('click', () => setMuted(!muted));
+
+  // --- Settings dropdown ---
+  const settingsBtn = document.getElementById('settings');
+  const settingsPanel = document.getElementById('settings-panel');
+  const reducedInput = document.getElementById('pref-reduced');
+  const shapesInput = document.getElementById('pref-shapes');
+  reducedInput.checked = prefs.reducedMotion;
+  shapesInput.checked = prefs.shapes;
+
+  function setSettingsOpen(open) {
+    settingsPanel.classList.toggle('hidden', !open);
+    settingsBtn.setAttribute('aria-expanded', String(open));
+  }
+  settingsBtn.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    setSettingsOpen(settingsPanel.classList.contains('hidden'));
+  });
+  document.addEventListener('click', (ev) => {
+    if (!settingsPanel.contains(ev.target) && ev.target !== settingsBtn) {
+      setSettingsOpen(false);
+    }
+  });
+
+  reducedInput.addEventListener('change', () => {
+    prefs.reducedMotion = reducedInput.checked;
+    savePrefs(); applyPrefs();
+  });
+  shapesInput.addEventListener('change', () => {
+    prefs.shapes = shapesInput.checked;
+    savePrefs(); applyPrefs();
+    // Re-render tiles so glyphs appear/disappear immediately
+    if (cells && cells.length) {
+      for (let r = 0; r < ROWS; r++)
+        for (let c = 0; c < COLS; c++)
+          if (cells[r][c]) updateTile(r, c);
+    }
+  });
 
   boardEl.style.setProperty('--cols', COLS);
   boardEl.style.setProperty('--rows', ROWS);

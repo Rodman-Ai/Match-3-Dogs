@@ -392,6 +392,66 @@ html, body {
   font-size: 16px;
 }
 
+/* Settings dropdown */
+.settings-wrap { position: relative; }
+
+.settings-panel {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  min-width: 200px;
+  background: linear-gradient(160deg, #2c1e63, #44267a);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 14px;
+  padding: 10px;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.45);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.settings-panel.hidden { display: none; }
+
+.settings-panel .setting {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--text);
+}
+.settings-panel .setting:hover { background: rgba(255,255,255,0.06); }
+.settings-panel .setting input { width: 16px; height: 16px; accent-color: var(--accent); }
+
+/* Color-blind shape glyphs (rendered inside dogSVG when prefs enables them) */
+.dog .glyph {
+  font-size: 10px;
+  font-weight: 800;
+  fill: rgba(20, 14, 50, 0.8);
+  paint-order: stroke;
+  stroke: rgba(255,255,255,0.85);
+  stroke-width: 0.6;
+  stroke-linejoin: round;
+}
+
+/* Reduced motion: silence everything that bobs, drifts, sways, or bursts. */
+[data-reduced-motion] .dog,
+[data-reduced-motion] .dog .ear-l,
+[data-reduced-motion] .dog .ear-r,
+[data-reduced-motion] .paws,
+[data-reduced-motion] .tile.power-h::before,
+[data-reduced-motion] .tile.power-v::before,
+[data-reduced-motion] .tile.power-bomb::after,
+[data-reduced-motion] .tile.power-rainbow {
+  animation: none !important;
+}
+[data-reduced-motion] .tile.swapping { transition: none !important; }
+[data-reduced-motion] .particle { display: none !important; }
+[data-reduced-motion] .floater { animation-duration: 0.001ms !important; }
+[data-reduced-motion] .combo { animation-duration: 0.001ms !important; }
+
 /* Score floaters */
 .floater {
   position: absolute;
