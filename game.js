@@ -1003,10 +1003,12 @@
       currentGoal = GOAL;
       currentMoves = START_MOVES;
     }
-    // Reflect mode in button visuals (the dailyBtn is fetched lazily because
-    // newGame() may run before the listener block below has resolved it)
+    // Reflect mode in button visuals (buttons are fetched lazily because
+    // newGame() may run before the listener block below has resolved them)
     const dBtn = document.getElementById('dailyBtn');
+    const lBtn = document.getElementById('levelsBtn');
     if (dBtn) dBtn.classList.toggle('active', mode.kind === 'daily');
+    if (lBtn) lBtn.classList.toggle('active', mode.kind === 'level');
     newGameBtn.classList.toggle('active', mode.kind === 'classic');
     setScore(0);
     setMoves(currentMoves);
@@ -1128,6 +1130,48 @@
   newGameBtn.addEventListener('click', () => newGame({ kind: 'classic' }));
   const dailyBtn = document.getElementById('dailyBtn');
   dailyBtn.addEventListener('click', () => newGame({ kind: 'daily', dateKey: todayKey() }));
+
+  // --- Levels modal ---
+  const levelsBtn = document.getElementById('levelsBtn');
+  const levelsModal = document.getElementById('levels-modal');
+  const levelsGrid = document.getElementById('levels-grid');
+  const closeLevelsBtn = document.getElementById('closeLevels');
+
+  function renderLevelsGrid() {
+    const records = loadLevels();
+    levelsGrid.innerHTML = '';
+    for (let n = 1; n <= LEVELS.length; n++) {
+      const rec = records[String(n)] || { stars: 0, best: 0 };
+      const prevRec = records[String(n - 1)];
+      const unlocked = n === 1 || (prevRec && prevRec.stars >= 1);
+      const tile = document.createElement('button');
+      tile.type = 'button';
+      tile.className = 'level-tile' + (unlocked ? '' : ' locked') + (rec.stars > 0 ? ' passed' : '');
+      tile.disabled = !unlocked;
+      const starsHTML = [0, 1, 2].map(i => i < rec.stars ? '★' : '<span class="off">★</span>').join('');
+      tile.innerHTML = unlocked
+        ? `<span class="num">${n}</span>
+           <span class="stars-mini">${starsHTML}</span>
+           <span class="best">${rec.best ? rec.best : '—'}</span>`
+        : `<span class="num">${n}</span>
+           <span class="lock">🔒</span>`;
+      tile.addEventListener('click', () => {
+        if (!unlocked) return;
+        levelsModal.classList.add('hidden');
+        newGame({ kind: 'level', n });
+      });
+      levelsGrid.appendChild(tile);
+    }
+  }
+
+  levelsBtn.addEventListener('click', () => {
+    renderLevelsGrid();
+    levelsModal.classList.remove('hidden');
+  });
+  closeLevelsBtn.addEventListener('click', () => levelsModal.classList.add('hidden'));
+  levelsModal.addEventListener('click', (ev) => {
+    if (ev.target === levelsModal) levelsModal.classList.add('hidden');
+  });
 
   // Prevent context menu on long-press
   boardEl.addEventListener('contextmenu', (e) => e.preventDefault());

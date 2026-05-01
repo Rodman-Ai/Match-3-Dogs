@@ -555,6 +555,74 @@ html, body {
   to   { opacity: 1; }
 }
 
+/* Level-select modal (full-viewport, distinct from in-board overlay) */
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 8, 40, 0.78);
+  backdrop-filter: blur(8px);
+  display: grid;
+  place-items: center;
+  z-index: 50;
+  animation: fadeIn 160ms ease;
+  padding: 16px;
+}
+.modal.hidden { display: none; }
+
+.modal-card {
+  background: linear-gradient(160deg, #2c1e63, #44267a);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 20px;
+  padding: 22px 22px 18px;
+  width: min(520px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  text-align: center;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.5);
+}
+.modal-card h2 { margin: 0 0 14px; font-size: 24px; }
+
+.levels-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.level-tile {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 14px;
+  padding: 10px 4px 8px;
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-height: 88px;
+  color: var(--text);
+}
+.level-tile:hover { transform: translateY(-2px); background: rgba(255,255,255,0.1); }
+.level-tile.locked {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.level-tile.locked:hover { transform: none; }
+.level-tile.passed { box-shadow: 0 0 0 1px rgba(255,209,102,0.4) inset; }
+
+.level-tile .num { font-weight: 800; font-size: 20px; line-height: 1; }
+.level-tile .stars-mini { font-size: 12px; letter-spacing: 1px; color: var(--accent); }
+.level-tile .stars-mini .off { color: rgba(255,255,255,0.22); }
+.level-tile .best { font-size: 10px; color: var(--muted); }
+.level-tile .lock { font-size: 16px; }
+
+@media (max-width: 460px) {
+  .levels-grid { grid-template-columns: repeat(5, 1fr); gap: 8px; }
+  .level-tile { padding: 8px 2px; min-height: 80px; }
+  .level-tile .num { font-size: 18px; }
+}
+
 /* Tiny phones */
 @media (max-width: 380px) {
   .stat { min-width: 50px; padding: 4px 8px; }
