@@ -22,21 +22,27 @@
   ];
   const LEVELS_KEY = 'match3dogs:levels';
 
-  // 6 dog breeds. Beagle and Doge required by spec; rest add variety.
-  // Order: 0 beagle, 1 doge, 2 dalmatian, 3 husky, 4 poodle, 5 pug.
+  // 6 dog breeds, tuned for color diversity and contrast.
+  // Order: 0 beagle, 1 doge/shiba, 2 dalmatian, 3 husky, 4 poodle, 5 black lab.
   const DOG_CONFIGS = [
-    { head: '#f4d4a8', muzzle: '#fff5e0', eyeKind: 'round', eyeColor: '#222',
-      ear: 'droopy', earColor: '#8b5a2b' },
-    { head: '#e8a44c', muzzle: '#fbe6c4', eyeKind: 'smug',  eyeColor: '#222',
-      ear: 'pointy', earColor: '#c97f24' },
-    { head: '#ffffff', muzzle: '#ffffff', eyeKind: 'round', eyeColor: '#222',
-      ear: 'medium', earColor: '#1c1c1c', spots: true },
-    { head: '#a8b8c4', muzzle: '#ffffff', eyeKind: 'round', eyeColor: '#5ac8fa',
-      ear: 'pointy', earColor: '#5a6a78' },
-    { head: '#f8c0d6', muzzle: '#ffffff', eyeKind: 'round', eyeColor: '#222',
-      ear: 'curly',  earColor: '#e89bb9' },
-    { head: '#d6a878', muzzle: '#3a2614', eyeKind: 'round', eyeColor: '#222',
-      ear: 'small',  earColor: '#5a3a20', wrinkle: true },
+    // Beagle: warm tan with deep brown droopy ears
+    { head: '#e8b87a', muzzle: '#fff5e0', eyeKind: 'round', eyeColor: '#222',
+      ear: 'droopy', earColor: '#6b3a1f' },
+    // Doge / Shiba: vivid orange + smug eyes + tongue
+    { head: '#ef8a3c', muzzle: '#fbe6c4', eyeKind: 'smug',  eyeColor: '#222',
+      ear: 'pointy', earColor: '#a04510', tongue: true },
+    // Dalmatian: bright white with crisp black spots and ears
+    { head: '#fafafa', muzzle: '#fafafa', eyeKind: 'round', eyeColor: '#1a1a1a',
+      ear: 'medium', earColor: '#1a1a1a', spots: true },
+    // Husky: blue-grey with high-contrast dark eye + bright blue iris
+    { head: '#8aa6c2', muzzle: '#f5f5f8', eyeKind: 'husky', eyeColor: '#10243f',
+      ear: 'pointy', earColor: '#3d4f64' },
+    // Poodle: hot pink with curly ears and a tongue
+    { head: '#ee84b3', muzzle: '#ffffff', eyeKind: 'round', eyeColor: '#222',
+      ear: 'curly',  earColor: '#c25390', tongue: true },
+    // Black Lab (replaces Pug for contrast): black coat, tan muzzle, white-ringed eyes
+    { head: '#2d2d33', muzzle: '#5b432d', eyeKind: 'pop',   eyeColor: '#1a1a1a',
+      ear: 'medium', earColor: '#1a1a1c' },
   ];
   const KIND_COUNT = DOG_CONFIGS.length;
 
@@ -139,24 +145,23 @@
     return `${h}:${m}:${s}`;
   }
 
+  // Ear paths chosen to extend visibly past the head ellipse (cx=30,cy=33,rx=20,ry=18).
   const EAR_PATHS = {
-    droopy: { l: 'M 14,22 Q 4,40 14,48 Q 19,42 19,30 Z',
-              r: 'M 46,22 Q 56,40 46,48 Q 41,42 41,30 Z' },
-    pointy: { l: 'M 12,16 L 6,30 L 22,26 Z',
-              r: 'M 48,16 L 54,30 L 38,26 Z' },
-    medium: { l: 'M 14,18 Q 6,32 14,36 Q 20,30 20,22 Z',
-              r: 'M 46,18 Q 54,32 46,36 Q 40,30 40,22 Z' },
-    small:  { l: 'M 18,18 L 14,28 L 22,26 Z',
-              r: 'M 42,18 L 46,28 L 38,26 Z' },
+    droopy: { l: 'M 12,22 Q 0,42 12,52 Q 19,46 19,30 Z',
+              r: 'M 48,22 Q 60,42 48,52 Q 41,46 41,30 Z' },
+    pointy: { l: 'M 10,6 L 2,28 L 24,24 Z',
+              r: 'M 50,6 L 58,28 L 36,24 Z' },
+    medium: { l: 'M 10,16 Q 0,32 12,40 Q 22,32 22,20 Z',
+              r: 'M 50,16 Q 60,32 48,40 Q 38,32 38,20 Z' },
   };
 
   function earSVG(kind, color) {
     if (kind === 'curly') {
       return `<g class="ear ear-l" fill="${color}">
-          <circle cx="14" cy="22" r="5"/><circle cx="11" cy="18" r="4"/><circle cx="18" cy="26" r="4"/>
+          <circle cx="12" cy="22" r="6"/><circle cx="9" cy="16" r="5"/><circle cx="18" cy="28" r="5"/>
         </g>
         <g class="ear ear-r" fill="${color}">
-          <circle cx="46" cy="22" r="5"/><circle cx="49" cy="18" r="4"/><circle cx="42" cy="26" r="4"/>
+          <circle cx="48" cy="22" r="6"/><circle cx="51" cy="16" r="5"/><circle cx="42" cy="28" r="5"/>
         </g>`;
     }
     const p = EAR_PATHS[kind];
@@ -164,33 +169,62 @@
             <path class="ear ear-r" d="${p.r}" fill="${color}"/>`;
   }
 
+  function eyeMarkup(c) {
+    if (c.eyeKind === 'smug') {
+      return `<path class="eye eye-l" d="M 19,28 Q 22,25 25,28" stroke="${c.eyeColor}" stroke-width="2" fill="none" stroke-linecap="round"/>
+              <path class="eye eye-r" d="M 35,28 Q 38,25 41,28" stroke="${c.eyeColor}" stroke-width="2" fill="none" stroke-linecap="round"/>`;
+    }
+    if (c.eyeKind === 'husky') {
+      // Dark navy outer (visible on grey head) + bright blue iris glint
+      return `<g class="eye eye-l">
+                <circle cx="22" cy="27" r="2.6" fill="${c.eyeColor}"/>
+                <circle cx="22.5" cy="26.4" r="1.0" fill="#5ac8fa"/>
+              </g>
+              <g class="eye eye-r">
+                <circle cx="38" cy="27" r="2.6" fill="${c.eyeColor}"/>
+                <circle cx="38.5" cy="26.4" r="1.0" fill="#5ac8fa"/>
+              </g>`;
+    }
+    if (c.eyeKind === 'pop') {
+      // White sclera + dark pupil (high contrast on black coats)
+      return `<g class="eye eye-l">
+                <circle cx="22" cy="27" r="2.6" fill="#ffffff"/>
+                <circle cx="22" cy="27" r="1.2" fill="${c.eyeColor}"/>
+              </g>
+              <g class="eye eye-r">
+                <circle cx="38" cy="27" r="2.6" fill="#ffffff"/>
+                <circle cx="38" cy="27" r="1.2" fill="${c.eyeColor}"/>
+              </g>`;
+    }
+    // round (default)
+    return `<circle class="eye eye-l" cx="22" cy="27" r="2.3" fill="${c.eyeColor}"/>
+            <circle class="eye eye-r" cx="38" cy="27" r="2.3" fill="${c.eyeColor}"/>`;
+  }
+
   function dogSVG(kind) {
     const c = DOG_CONFIGS[kind];
-    const eyes = c.eyeKind === 'smug'
-      ? `<path class="eye eye-l" d="M 19,28 Q 22,25 25,28" stroke="${c.eyeColor}" stroke-width="2" fill="none" stroke-linecap="round"/>
-         <path class="eye eye-r" d="M 35,28 Q 38,25 41,28" stroke="${c.eyeColor}" stroke-width="2" fill="none" stroke-linecap="round"/>`
-      : `<circle class="eye eye-l" cx="22" cy="27" r="2.3" fill="${c.eyeColor}"/>
-         <circle class="eye eye-r" cx="38" cy="27" r="2.3" fill="${c.eyeColor}"/>`;
+    const eyes = eyeMarkup(c);
     const spots = c.spots
       ? `<g class="spots" fill="#1c1c1c">
            <circle cx="20" cy="22" r="2.4"/><circle cx="40" cy="20" r="1.8"/>
            <circle cx="44" cy="32" r="1.6"/><circle cx="16" cy="36" r="1.8"/>
          </g>` : '';
-    const wrinkle = c.wrinkle
-      ? `<path d="M 24,34 Q 30,32 36,34" stroke="#5a3a20" stroke-width="1.2" fill="none" stroke-linecap="round"/>` : '';
     const glyph = prefs.shapes
       ? `<text class="glyph" x="52" y="14" text-anchor="middle">${KIND_GLYPHS[kind]}</text>`
       : '';
+    // Always-visible tongue for breeds with c.tongue; otherwise hidden tongue
+    // shown only when the tile is selected (existing behaviour).
+    const tongueClass = c.tongue ? 'tongue always' : 'tongue';
+    const tongueRy = c.tongue ? 1.8 : 2.4;
     return `<svg class="dog" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
       ${earSVG(c.ear, c.earColor)}
       <ellipse class="head" cx="30" cy="33" rx="20" ry="18" fill="${c.head}"/>
       ${spots}
       <ellipse class="muzzle" cx="30" cy="40" rx="11" ry="8" fill="${c.muzzle}"/>
-      ${wrinkle}
       <ellipse class="nose" cx="30" cy="35" rx="2.6" ry="2" fill="#222"/>
       ${eyes}
       <path class="mouth" d="M 26,42 Q 30,45 34,42" stroke="#222" stroke-width="1.6" fill="none" stroke-linecap="round"/>
-      <ellipse class="tongue" cx="30" cy="44" rx="3.5" ry="2.4" fill="#ff6b9d"/>
+      <ellipse class="${tongueClass}" cx="30" cy="44.5" rx="3.0" ry="${tongueRy}" fill="#ff6b9d"/>
       ${glyph}
     </svg>`;
   }

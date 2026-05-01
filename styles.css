@@ -176,12 +176,12 @@ html, body {
 }
 
 /* Tile colour accents per dog kind */
-.tile[data-kind="0"] { background: #ffe7c8; }
-.tile[data-kind="1"] { background: #ffd9a8; }
-.tile[data-kind="2"] { background: #e8e8ee; }
-.tile[data-kind="3"] { background: #cfe1f3; }
-.tile[data-kind="4"] { background: #fbd2e3; }
-.tile[data-kind="5"] { background: #efd9bd; }
+.tile[data-kind="0"] { background: #fce5b8; } /* beagle: cream */
+.tile[data-kind="1"] { background: #ffd098; } /* doge: peach */
+.tile[data-kind="2"] { background: #e1e3ee; } /* dalmatian: cool grey */
+.tile[data-kind="3"] { background: #b9d3ee; } /* husky: sky blue */
+.tile[data-kind="4"] { background: #fbb8d4; } /* poodle: pink */
+.tile[data-kind="5"] { background: #b0a8b4; } /* black lab: warm slate (for contrast on black) */
 
 /* Idle dog animations — each kind a slightly different rhythm */
 .tile .dog            { animation: dog-idle 2.4s ease-in-out infinite; }
@@ -211,6 +211,12 @@ html, body {
   opacity: 0;
   transform: translateY(-3px);
   transition: opacity 200ms ease, transform 200ms ease;
+}
+
+/* Some breeds (doge, poodle) wear their tongue out by default */
+.dog .tongue.always {
+  opacity: 0.95;
+  transform: translateY(0);
 }
 
 .tile.selected {
@@ -255,12 +261,15 @@ html, body {
 }
 
 .tile.fall {
-  animation: drop 320ms cubic-bezier(.25, 1.4, .5, 1);
+  animation: drop 460ms cubic-bezier(.36, .04, .29, 1.4);
 }
 
 @keyframes drop {
-  from { transform: translateY(-30%); opacity: 0.6; }
-  to   { transform: translateY(0); opacity: 1; }
+  0%   { transform: translateY(-90%) scale(0.95); opacity: 0; }
+  35%  { opacity: 1; }
+  68%  { transform: translateY(0)    scale(1.04); }
+  82%  { transform: translateY(-3%)  scale(0.99); }
+  100% { transform: translateY(0)    scale(1); opacity: 1; }
 }
 
 .tile.swap-bad {
